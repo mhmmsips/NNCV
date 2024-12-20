@@ -4,7 +4,7 @@ Welcome to the repository for **5LSM0: Neural Networks for Computer Vision**, a 
 
 ## Overview
 
-This repository contains all the assignments and supplementary materials for the course. The weekly assignments are designed as **Jupyter Notebooks**, providing practical, hands-on experience with the concepts discussed during lectures. These notebooks will help you gain familiarity with implementing neural networks using **PyTorch** in **Python**.
+This repository contains all the assignments and supplementary materials for the course. The weekly assignments are designed as **Jupyter Notebooks**, providing practical, hands-on experience with the concepts discussed during lectures. These notebooks will help you gain familiarity with implementing neural networks using **PyTorch** in **Python**. For the final assignment, you will apply the knowledge gained throughout the course by coding in native Python and working with a compute cluster, providing valuable experience in real-world computational environments.
 
 ### Weekly Assignments
 
