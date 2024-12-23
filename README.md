@@ -29,7 +29,10 @@ This course material is developed and maintained by the following contributors:
   Email: [c.h.b.claessens@tue.nl](mailto:c.h.b.claessens@tue.nl)  
 
 - **Tim J.M. Jaspers**  
-  Email: [t.j.m.jaspers@tue.nl](mailto:t.j.m.jaspers@tue.nl)  
+  Email: [t.j.m.jaspers@tue.nl](mailto:t.j.m.jaspers@tue.nl)
+
+- **Francisco De Espírito Santo e Caetano**  
+  Email: [f.t.de.espirito.santo.e.caetano@tue.nl](mailto:f.t.de.espirito.santo.e.caetano@tue.nl)
 
 - **Carolus (Koen) H.J Kusters**  
   Email: [c.h.j.kusters@tue.nl](mailto:c.h.j.kusters@tue.nl)  
