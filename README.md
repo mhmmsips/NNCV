@@ -20,3 +20,18 @@ The **final assignment** is the cornerstone of this course and accounts for **50
 3. Document your results and insights in a detailed report.
 
 This final assignment requires a deeper dive into the subject, pushing you to apply the knowledge and skills gained throughout the course.
+
+## Authors and Contact
+
+This course material is developed and maintained by the following contributors:  
+
+- **Cris H.B. Claessens**  
+  Email: [c.h.b.claessens@tue.nl](mailto:c.h.b.claessens@tue.nl)  
+
+- **Tim J.M. Jaspers**  
+  Email: [t.j.m.jaspers@tue.nl](mailto:t.j.m.jaspers@tue.nl)  
+
+- **Carolus (Koen) H.J Kusters**  
+  Email: [c.h.j.kusters@tue.nl](mailto:c.h.j.kusters@tue.nl)  
+
+If you have questions or need assistance, you can always reach out to us via email. However, we strongly encourage you to post your questions in the **Discussions** section of this GitHub repository. This way, other students can benefit from the conversations and contribute by helping each other out.
