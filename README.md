@@ -35,6 +35,9 @@ This course material is developed and maintained by the following contributors:
   Email: [f.t.de.espirito.santo.e.caetano@tue.nl](mailto:f.t.de.espirito.santo.e.caetano@tue.nl)
 
 - **Carolus (Koen) H.J Kusters**  
-  Email: [c.h.j.kusters@tue.nl](mailto:c.h.j.kusters@tue.nl)  
+  Email: [c.h.j.kusters@tue.nl](mailto:c.h.j.kusters@tue.nl)
+
+- **dr. Christiaan G.A. Viviers**
+  Email: [c.g.a.vivers@tue.nl](mailto:c.g.a.vivers@tue.nl)
 
 If you have questions or need assistance, you can always reach out to us via email. However, we strongly encourage you to post your questions in the **Discussions** section of this GitHub repository. This way, other students can benefit from the conversations and contribute by helping each other out.
