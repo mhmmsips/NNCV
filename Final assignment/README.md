@@ -1,6 +1,6 @@
 # Final Assignment: Cityscape Challenge  
 
-Welcome to the **Cityscape Challenge**, the culminating project for this course!  
+Welcome to the **Cityscape Challenge**, the final project for this course!  
 
 In this assignment, you'll put your knowledge of Neural Networks (NNs) for computer vision into action by tackling real-world problems using the **CityScapes dataset**. This dataset contains large-scale, high-quality images of urban environments, making it perfect for tasks like semantic segmentation and object detection.  
 
@@ -37,7 +37,9 @@ Write a **4-page research paper** in IEEE double-column format, addressing the f
 - **Baseline Implementation**: Describe your baseline approach and results using an off-the-shelf segmentation model.  
 - **Improvements**: Outline the enhancements you made, supported by experimental results and justifications.  
 - **Discussion**: Discuss limitations and suggest future improvements.  
-- **Figures & Tables**: Use clear visuals to support your findings.  
+- **Figures & Tables**: Use clear visuals to support your findings.
+
+> **Submission**: Submit your paper as a PDF document via **Canvas**.
 
 The paper will be graded based on clarity, experimental design, insight, and originality.  
 
@@ -48,7 +50,7 @@ Push all relevant code to a **public GitHub repository** with a README.md file d
 - Your Codalab username and TU/e email address for correct mapping across systems.  
 
 ### 3. Codalab Submissions  
-Submit your model for evaluation to the **Codalab challenge**, which includes four benchmark test sets.  
+Submit your model for evaluation to the **Codalab challenge server**, which includes four benchmark test sets.  
 
 ---
 
