@@ -127,17 +127,17 @@ Once submitted, the cluster will schedule your job, and SLURM will handle the ex
 
 The `jobscript_slurm.sh` file includes several SLURM-specific directives (denoted by #SBATCH). Here’s a brief explanation of these commands:
 
-- `#SBATCH --nodes=1`
+- `#SBATCH --nodes=1`  
    Specifies the number of nodes (computers) your job will use. Here, only one node is requested.
-- `#SBATCH --ntasks=1`
+- `#SBATCH --ntasks=1`  
    Specifies the number of tasks (processes) for the job. In this case, a single task is requested.
-- `#SBATCH --cpus-per-task=18`
+- `#SBATCH --cpus-per-task=18`  
    Allocates 18 CPU cores for the task. This value should match the requirements of your workload.
-- `#SBATCH --gpus=1`
+- `#SBATCH --gpus=1`  
    Requests one GPU for the job.
-- `#SBATCH --partition=gpu_a100`
+- `#SBATCH --partition=gpu_a100`  
    Specifies the partition to run the job on. gpu_a100 refers to a partition with NVIDIA A100 GPUs.
-- `#SBATCH --time=00:30:00`
+- `#SBATCH --time=00:30:00`  
    Sets a time limit of 30 minutes for the job. Adjust this value based on your expected runtime.
 
 ---
