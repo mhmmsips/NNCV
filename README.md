@@ -1,6 +1,6 @@
 # 5LSM0: Neural Networks for Computer Vision
 
-Welcome to the repository for **5LSM0: Neural Networks for Computer Vision**, a course offered by the Department of Electrical Engineering at Eindhoven University of Technology. This course is hosted by the Video Coding & Architectures research group.
+Welcome to the repository for **5LSM0: Neural Networks for Computer Vision**, a course offered by the Department of Electrical Engineering at Eindhoven University of Technology. This course is hosted by the [Video Coding & Architectures research group](https://www.tue.nl/en/research/research-groups/signal-processing-systems/video-coding-architectures).
 
 ## Overview
 
