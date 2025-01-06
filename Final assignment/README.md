@@ -1,4 +1,4 @@
-# Final assignment: Cityscape Challenge  
+# Final Assignment: Cityscape Challenge  
 
 Welcome to the **Cityscape Challenge**, the final project for this course!  
 
@@ -54,7 +54,7 @@ Submit your model for evaluation to the **Codalab challenge server**, which incl
 
 ---
 
-## Grading and bonus points  
+## Grading and Bonus Points  
 
 The final assignment accounts for **50% of your course grade**. Additionally, bonus points are available:  
 
@@ -67,7 +67,7 @@ For example, achieving the best performance in 'Peak Performance' and a top 3 sp
 
 ---
 
-## Important notes  
+## Important Notes  
 
 - Ensure a proper **train-validation split** of the CityScapes dataset.  
 - Training your model may take many hours; plan accordingly.  
@@ -80,7 +80,7 @@ We wish you the best of luck in this challenge and are excited to see the innova
 
 ---
 
-## Running jobs on the SLURM cluster  
+## Running Jobs on the SLURM Cluster  
 
 This repository includes scripts to help you get started with running your models on a SLURM cluster. Follow the steps below to set up your environment, configure your API keys, and submit a job to the server.  
 
@@ -121,6 +121,8 @@ sbatch jobscript_slurm.sh
 
 Once submitted, the cluster will schedule your job, and SLURM will handle the execution.
 
+---
+
 ### Explaination of SLURM parameters
 
 The `jobscript_slurm.sh` file includes several SLURM-specific directives (denoted by #SBATCH). Here’s a brief explanation of these commands:
@@ -137,6 +139,8 @@ The `jobscript_slurm.sh` file includes several SLURM-specific directives (denote
    Specifies the partition to run the job on. gpu_a100 refers to a partition with NVIDIA A100 GPUs.
 - `#SBATCH --time=00:30:00`
    Sets a time limit of 30 minutes for the job. Adjust this value based on your expected runtime.
+
+---
 
 ### Understanding the scripts
 
@@ -175,6 +179,8 @@ wandb login
 torchrun --nnodes=1 -nproc_per_node=1 train.py \  
     --data-dir /data/Cityscapes
 ```
+
+---
 
 ### Notes
 
