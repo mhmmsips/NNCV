@@ -89,13 +89,19 @@ srun apptainer exec --nv --env-file .env $CONTAINER /bin/bash main.sh
 This script contains the commands to execute inside the container. It:
 
 Logs in to Weights & Biases (W&B) for experiment tracking.
-Runs the training script (`train.py`) using `torchrun`, which is configured for distributed training.
+Runs the training script (`train.py`), which is configured for single-gpu training.
+Parses the desired hyperparameters to the `ArgumentParser`.
 
 ```bash
-wandb login  
+wandb login
 
-torchrun --nnodes=1 -nproc_per_node=1 train.py \  
-    --data-dir /data/Cityscapes
+python3 train.py \
+    --data-dir /data/Cityscapes \
+    --batch-size 64 \
+    --epochs 100 \
+    --lr 0.001 \
+    --val-split 0.1 \
+    --seed 42 \
 ```
 
 ---
