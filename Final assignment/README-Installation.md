@@ -105,10 +105,11 @@ To start working on the project, follow these steps:
  > TIP: Save your sessions in MobaXTerm for faster connections in the future.
 
 ## Additional tips
-1. **SSH Key Managment**: To avoid typing your password repeatedly when using Git or W&B, set up an SSH key. 
+1. **SSH Key Managment**: To avoid typing your password repeatedly when using Git or W&B, set up an API key. 
     - **GitHub**: Go to **Settings** > **Developer settings** > **Personal access tokens** > **Tokens (classic)** and create a personal access token. Then on the server, change your clone command to: 
         ```bash
         git clone https://<your-username>:<your-api-key>@github.com/<your-username>/<your-repo-name>
         ```
-    - **W&B**: 
+        This will make sure that everytime you will perform a `git` operation (e.g., `git pull`) in the future within this repo, your will automatically be logged in.
+    - **W&B**: Go to **User settings** > **API keys** and create a new key. You can leave this key as is for now. More instructions on how to use this key are specified in the `README-Slurm.md` file.
 2. **Debugging in VSCode**: Use breakpoints and the built-in debugger for easier code debugging. Learn more about debugging in Python [here](http://code.visualstudio.com/docs/python/debugging).
