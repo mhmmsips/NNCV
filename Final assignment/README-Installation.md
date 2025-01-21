@@ -97,15 +97,18 @@ To start working on the project, follow these steps:
 ### MobaXTerm
 - Connect to the remote server:
     - Open MobaXTerm.
-    - Click on "Session" > "SSH".
+    - Click on **Session** > **SSH**.
     - Enter the server details.
-        - "Remote host": snellius.surf.nl.
-        - "Specify username": check box + <your username>.
-    - Click "OK".
+        - **Remote host**: snellius.surf.nl.
+        - **Specify username**: check box + `<your-username>`.
+    - Click **OK**.
  > TIP: Save your sessions in MobaXTerm for faster connections in the future.
 
 ## Additional tips
 1. **SSH Key Managment**: To avoid typing your password repeatedly when using Git or W&B, set up an SSH key. 
-    - **GitHub**: Go to "Settings" > "Developer settings" > "Personal access tokens" > "Tokens (classic)" and create a personal access token. Then on the server, use `git clone https://<your-username>:<api_key>@github.com/<your-username>/<your-repo-name>` instead of your normal `git clone https://github.com/<your-username>/<your-repo-name>`.
+    - **GitHub**: Go to **Settings** > **Developer settings** > **Personal access tokens** > **Tokens (classic)** and create a personal access token. Then on the server, change your clone command to: 
+        ```bash
+        git clone https://<your-username>:<your-api-key>@github.com/<your-username>/<your-repo-name>
+        ```
     - **W&B**: 
 2. **Debugging in VSCode**: Use breakpoints and the built-in debugger for easier code debugging. Learn more about debugging in Python [here](http://code.visualstudio.com/docs/python/debugging).
