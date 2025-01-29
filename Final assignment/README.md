@@ -24,6 +24,7 @@ The competition comprises four benchmarks, each targeting a specific aspect of m
 4. **Out-of-distribution detection**  
    Models often encounter data that differs from the training distribution, leading to unreliable predictions. This benchmark evaluates your model's ability to detect and handle such out-of-distribution samples.  
 
+> **IMPORTANT NOTE**: There will be a fifth benchmark on the competition server where everyone **must** submit a baseline model. The code for training this model is already provided. This benchmark aims to ensure everyone is familiar with working on an HPC cluster. The benchmark will close after **Sunday, March 16**, so start preparing your baseline submission early. This will give you time to ask questions during the arranged computer classes if you encounter any issues.
 ---
 
 ## Deliverables  
