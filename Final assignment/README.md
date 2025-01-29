@@ -34,7 +34,7 @@ Your final submission will consist of the following:
 ### 1. Research paper  
 Write a **3-4 page research paper** in [IEEE double-column format](https://www.overleaf.com/latex/templates/ieee-conference-template/grfzhhncsfqn), addressing (at least) the following:  
 
-- **Abstract**: Summarize the problem, key steps for addressing them and your main findings in about 100-300 words.
+- **Abstract**: Summarize the current problems, your key steps for addressing them and your main findings in about 100-300 words.
 - **Introduction**: Present the problem, challenges, and potential solutions based on existing literature.  
 - **Methods**: Describe your dataset(s), outline the baseline approach using an off-the-shelf segmentation model and define the enhancements you made for the specific benchmarks you participated.  
 - **Results**: Show and describe your results based on performance metrics and examples. Use figures and tables to support your findings. 
