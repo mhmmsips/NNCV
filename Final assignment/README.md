@@ -32,13 +32,13 @@ The competition comprises four benchmarks, each targeting a specific aspect of m
 Your final submission will consist of the following:  
 
 ### 1. Research paper  
-Write a **4-page research paper** in IEEE double-column format, addressing the following:  
+Write a **3-4 page research paper** in [IEEE double-column format](https://www.overleaf.com/latex/templates/ieee-conference-template/grfzhhncsfqn), addressing (at least) the following:  
 
+- **Abstract**: Summarize the problem, key steps for addressing them and your main findings in about 100-300 words.
 - **Introduction**: Present the problem, challenges, and potential solutions based on existing literature.  
-- **Baseline implementation**: Describe your baseline approach and results using an off-the-shelf segmentation model.  
-- **Improvements**: Outline the enhancements you made, supported by experimental results and justifications.  
-- **Discussion**: Discuss limitations and suggest future improvements.  
-- **Figures & tables**: Use clear visuals to support your findings.
+- **Methods**: Describe your dataset(s), outline the baseline approach using an off-the-shelf segmentation model and define the enhancements you made for the specific benchmarks you participated.  
+- **Results**: Show and describe your results based on performance metrics and examples. Use figures and tables to support your findings. 
+- **Discussion**: Discuss the impact and potential of your main findings. Also discuss limitations and suggest future improvements.
 
 > **Submission**: Submit your paper as a PDF document via **Canvas**.
 
@@ -71,7 +71,7 @@ For example, achieving the best performance in 'Peak Performance' and a top 3 sp
 ## Important Notes  
 
 - Ensure a proper **train-validation split** of the CityScapes dataset.  
-- Training your model may take many hours; plan accordingly.  
+- Training your model may take multiple hours; plan accordingly.  
 - Use ideas from literature but remember to **cite all sources**. Plagiarism will not be tolerated.  
 - For questions or challenges, use the **Discussions** section of this repository to collaborate with peers.  
 
