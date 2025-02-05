@@ -18,7 +18,7 @@ import wandb
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
 from torchvision.transforms.v2 import (
     Compose,
@@ -30,12 +30,12 @@ from unet import UNet
 
 def get_args_parser():
 
-    parser = ArgumentParser("Training script for a PyTorch model")
-    parser.add_argument("--data-dir", type=str, default="data", help="Path to the training data")
+    parser = ArgumentParser("Training script for a PyTorch U-Net model")
+    parser.add_argument("--data-dir", type=str, default="./data/cityscapes", help="Path to the training data")
     parser.add_argument("--batch-size", type=int, default=64, help="Training batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--val-split", type=float, default=0.2, help="Validation data split ratio")
+    parser.add_argument("--num-workers", type=int, default=4, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
 
     return parser
@@ -79,8 +79,18 @@ def main(args):
         transforms=transform
     )
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False)
+    train_dataloader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        num_workers=args.num_workers
+    )
+    valid_dataloader = DataLoader(
+        valid_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=False,
+        num_workers=args.num_workers
+    )
 
     # Define the model
     model = UNet(
