@@ -108,11 +108,13 @@ This script contains the commands to execute inside the container. It:
 wandb login
 
 python3 train.py \
-    --data-dir /data/cityscapes \
+    --data-dir ./data/cityscapes \
     --batch-size 64 \
     --epochs 100 \
     --lr 0.001 \
+    --num-workers 4 \
     --seed 42 \
+    --experiment-id "unet-training" \
 ```
 
 If you need to make any changes to the input arguments of your script (e.g., change the `experiment-id` to avoid you are overwriting the results of your previous experiment), this is the place to be.
