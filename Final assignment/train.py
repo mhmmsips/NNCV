@@ -17,7 +17,7 @@ from argparse import ArgumentParser
 import wandb
 import torch
 import torch.nn as nn
-from torch.optim import SGD
+from torch.optim import AdamW
 from torch.utils.data import DataLoader, random_split
 from torchvision.datasets import Cityscapes
 from torchvision.transforms.v2 import (
@@ -48,6 +48,12 @@ def main(args):
         config=vars(args),  # Save hyperparameters
     )
 
+    # Set seed for reproducability
+    # If you add other sources of randomness (NumPy, Random), 
+    # make sure to set their seeds as well
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+
     # Define the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -58,17 +64,19 @@ def main(args):
     ])
 
     # Load the dataset and make a split for training and validation
-    dataset = Cityscapes(
+    train_dataset = Cityscapes(
         args.data_dir, 
         split="train", 
         mode="fine", 
         target_type="semantic", 
         transforms=transform
     )
-    train_dataset, valid_dataset = random_split(
-        dataset, 
-        [int((1-args.val_split)*len(dataset)), int(args.val_split*len(dataset))],
-        generator=torch.Generator().manual_seed(args.seed)
+    valid_dataset = Cityscapes(
+        args.data_dir, 
+        split="val", 
+        mode="fine", 
+        target_type="semantic", 
+        transforms=transform
     )
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -84,7 +92,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     # Define the optimizer
-    optimizer = SGD(model.parameters(), lr=args.lr)
+    optimizer = AdamW(model.parameters(), lr=args.lr)
 
     # Training loop
     best_valid_loss = float('inf')
