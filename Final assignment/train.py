@@ -12,6 +12,7 @@ allowing you to easily modify hyperparameters using a command-line argument pars
 
 Feel free to customize the script as needed for your use case.
 """
+import os
 from argparse import ArgumentParser
 
 import wandb
@@ -37,6 +38,7 @@ def get_args_parser():
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--num-workers", type=int, default=4, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
 
     return parser
 
@@ -45,8 +47,13 @@ def main(args):
     # Initialize wandb for logging
     wandb.init(
         project="5lsm0-cityscapes-segmentation",  # Project name in wandb
+        name=args.experiment_id,  # Experiment name in wandb
         config=vars(args),  # Save hyperparameters
     )
+
+    # Create output directory if it doesn't exist
+    output_dir = os.path.join("checkpoints", args.experiment_id)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Set seed for reproducability
     # If you add other sources of randomness (NumPy, Random), 
@@ -145,16 +152,22 @@ def main(args):
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
                 torch.save(
-                    model.state_dict(), 
-                    f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+                    model.state_dict(),
+                    os.path.join(
+                        output_dir, 
+                        f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+                    )
                 )
         
     print("Training complete!")
 
     # Save the model
     torch.save(
-        model.state_dict(), 
-        f"final_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+        model.state_dict(),
+        os.path.join(
+            output_dir,
+            f"final_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+        )
     )
     wandb.finish()
 
