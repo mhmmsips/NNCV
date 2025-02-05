@@ -96,6 +96,8 @@ This is the job submission script. It runs the `main.sh` script inside the speci
 srun apptainer exec --nv --env-file .env container.sif /bin/bash main.sh
 ```
 
+Here you can make changes to the requested hardware for your run. On the [website](https://servicedesk.surf.nl/wiki/display/WIKI/Snellius+partitions+and+accounting) of SURF, you can find how many credits each partition will cost you per allocation. Make sure you request enough time for the script to finish, as SLURM will force your script to stop after the specified time has passed. However, don't set the time limit too high, as longer script will take longer to schedule.
+
 `main.sh`
 
 This script contains the commands to execute inside the container. It:
