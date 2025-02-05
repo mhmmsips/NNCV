@@ -14,31 +14,48 @@ cd "<your-repo-name>/Final assignment"
 ```
 Replace `<your-username>` and `<your-repo-name>` with your GitHub username and the name of your repository.
 
-## Step 2: Configure Paths and API Keys
+## Step 2: Download the Prerequisites
+
+We have stored all the necessary training and validation data, alongside with a Docker container that contains all the necessary modules, on a Huggingface page. To download these into the directory, submit the following script to SLURM and wait until the job has finished. This should leave you with a folder `data` and a `container.sif` file.
+
+```bash
+chmod +x download_docker_and_data.sh
+sbatch download_docker_and_data.sh
+```
+
+> Note that we first add execution rights to the file to avoid any errors. You only have to do this once.
+
+## Step 3: Configure Paths and API Keys
 
 The `.env` file in this repository is used to set up environment variables required for your job. Update this file to include the correct paths and your API keys:
 
 1. Open the `.env` file using a text editor:
+
    ```bash
    nano .env
    ```
+
+   If you are using MobaXTerm, you can also just open it using the file explorer windown on the right side.
+
 2. Update the following variables:
-   - `CONTAINER`: Path to the container you'll use (e.g., an Apptainer/Singularity image).
+
    - `WANDB_API_KEY`: Your Weights & Biases API key (for logging experiments).
    - `WANDB_DIR`: Path to the directory where the logs will be stored.
+
 3. Save and exit the file.
 
-## Step 3: Submit a Job to the Cluster
+## Step 4: Submit a Job to the Cluster
 
-You will use the `jobscript_slurm.sh` file to submit a job to the SLURM cluster. This script specifies the resources and commands needed to execute your training.
+You will use the `jobscript_slurm.sh` file to submit a job to the SLURM cluster. This script specifies the resources and commands needed to execute your training. In our case, the file executes another bash cript, `main.sh`, inside the container you just downloaded.
 
 Submit the job with the following command:
 
 ```bash
+chmod +x jobscript_slurm.sh
 sbatch jobscript_slurm.sh
 ```
 
-Once submitted, the cluster will schedule your job, and SLURM will handle the execution.
+Once submitted, SLURM will schedule your job, and the cluster will handle the execution.
 
 ---
 
@@ -65,10 +82,7 @@ The `jobscript_slurm.sh` file includes several SLURM-specific directives (denote
 
 `jobscript_slurm.sh`
 
-This is the job submission script. It:
-
-1. Sources the `.env` file to load environment variables.
-2. Runs the `main.sh` script inside the specified container using `apptainer exec`.
+This is the job submission script. It runs the `main.sh` script inside the specified container using `apptainer exec`.
 
 ```bash
 #!/bin/bash  
@@ -79,36 +93,34 @@ This is the job submission script. It:
 #SBATCH --partition=gpu_a100  
 #SBATCH --time=00:30:00  
 
-set -a  
-source .env  
-
-srun apptainer exec --nv --env-file .env $CONTAINER /bin/bash main.sh
+srun apptainer exec --nv --env-file .env container.sif /bin/bash main.sh
 ```
 
 `main.sh`
 
 This script contains the commands to execute inside the container. It:
 
-Logs in to Weights & Biases (W&B) for experiment tracking.
-Runs the training script (`train.py`), which is configured for single-gpu training.
-Parses the desired hyperparameters to the `ArgumentParser`.
+1. Logs in to Weights & Biases (W&B) for experiment tracking.
+2. Runs the training script (`train.py`), which is configured for single-gpu training.
+3. Parses the desired hyperparameters to the `ArgumentParser`.
 
 ```bash
 wandb login
 
 python3 train.py \
-    --data-dir /data/Cityscapes \
+    --data-dir /data/cityscapes \
     --batch-size 64 \
     --epochs 100 \
     --lr 0.001 \
-    --val-split 0.1 \
     --seed 42 \
 ```
+
+If you need to make any changes to the input arguments of your script (e.g., change the `experiment-id` to avoid you are overwriting the results of your previous experiment), this is the place to be.
 
 ---
 
 ## Notes
 
-- **Monitor your job**: Use `squeue` to check the status of your submitted job.
+- **Monitor your job**: Use the `squeue` command to check the status of your submitted jobs.
 - **Check logs**: SLURM will create log files (`slurm-<job_id>.out`) where you can see the output of your job.
 - **Adjust resources**: Modify the SLURM parameters in `jobscript_slurm.sh` to suit your task’s resource requirements.
