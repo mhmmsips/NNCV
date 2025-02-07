@@ -20,7 +20,7 @@ We will be hosting our code on GitHub. GitHub is a cloud-based platform for vers
 - **Backup Code Securely**: Store your code on a remote server to avoid losing work due to local machine issues.
 - **Integrate with Tools**: GitHub integrates seamlessly with CI/CD tools, testing frameworks, and more to streamline development.
 
-If you don't have an account yet, you can [sign up here](https://github.com/join).
+If you don't have an account yet, you can [sign up here](https://github.com/join). Also make sure to have Git installed on your local system. ([Download here!](https://git-scm.com/downloads))
 
 ### Weights and Biases (W&B)
 Weights and Biases (W&B) is a powerful tool for experiment tracking and visualization, especially useful in cluster environments where resources are shared, and reproducibility is critical. Here's why W&B is invaluable:
