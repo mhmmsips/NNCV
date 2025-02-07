@@ -12,13 +12,14 @@ allowing you to easily modify hyperparameters using a command-line argument pars
 
 Feel free to customize the script as needed for your use case.
 """
+import os
 from argparse import ArgumentParser
 
 import wandb
 import torch
 import torch.nn as nn
-from torch.optim import SGD
-from torch.utils.data import DataLoader, random_split
+from torch.optim import AdamW
+from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
 from torchvision.transforms.v2 import (
     Compose,
@@ -30,13 +31,14 @@ from unet import UNet
 
 def get_args_parser():
 
-    parser = ArgumentParser("Training script for a PyTorch model")
-    parser.add_argument("--data-dir", type=str, default="data", help="Path to the training data")
+    parser = ArgumentParser("Training script for a PyTorch U-Net model")
+    parser.add_argument("--data-dir", type=str, default="./data/cityscapes", help="Path to the training data")
     parser.add_argument("--batch-size", type=int, default=64, help="Training batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--val-split", type=float, default=0.2, help="Validation data split ratio")
+    parser.add_argument("--num-workers", type=int, default=4, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
 
     return parser
 
@@ -45,8 +47,19 @@ def main(args):
     # Initialize wandb for logging
     wandb.init(
         project="5lsm0-cityscapes-segmentation",  # Project name in wandb
+        name=args.experiment_id,  # Experiment name in wandb
         config=vars(args),  # Save hyperparameters
     )
+
+    # Create output directory if it doesn't exist
+    output_dir = os.path.join("checkpoints", args.experiment_id)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Set seed for reproducability
+    # If you add other sources of randomness (NumPy, Random), 
+    # make sure to set their seeds as well
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
 
     # Define the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,21 +71,33 @@ def main(args):
     ])
 
     # Load the dataset and make a split for training and validation
-    dataset = Cityscapes(
+    train_dataset = Cityscapes(
         args.data_dir, 
         split="train", 
         mode="fine", 
         target_type="semantic", 
         transforms=transform
     )
-    train_dataset, valid_dataset = random_split(
-        dataset, 
-        [int((1-args.val_split)*len(dataset)), int(args.val_split*len(dataset))],
-        generator=torch.Generator().manual_seed(args.seed)
+    valid_dataset = Cityscapes(
+        args.data_dir, 
+        split="val", 
+        mode="fine", 
+        target_type="semantic", 
+        transforms=transform
     )
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False)
+    train_dataloader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        num_workers=args.num_workers
+    )
+    valid_dataloader = DataLoader(
+        valid_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=False,
+        num_workers=args.num_workers
+    )
 
     # Define the model
     model = UNet(
@@ -84,7 +109,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     # Define the optimizer
-    optimizer = SGD(model.parameters(), lr=args.lr)
+    optimizer = AdamW(model.parameters(), lr=args.lr)
 
     # Training loop
     best_valid_loss = float('inf')
@@ -127,16 +152,22 @@ def main(args):
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
                 torch.save(
-                    model.state_dict(), 
-                    f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+                    model.state_dict(),
+                    os.path.join(
+                        output_dir, 
+                        f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+                    )
                 )
         
     print("Training complete!")
 
     # Save the model
     torch.save(
-        model.state_dict(), 
-        f"final_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+        model.state_dict(),
+        os.path.join(
+            output_dir,
+            f"final_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
+        )
     )
     wandb.finish()
 

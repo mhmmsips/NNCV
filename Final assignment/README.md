@@ -24,6 +24,7 @@ The competition comprises four benchmarks, each targeting a specific aspect of m
 4. **Out-of-distribution detection**  
    Models often encounter data that differs from the training distribution, leading to unreliable predictions. This benchmark evaluates your model's ability to detect and handle such out-of-distribution samples.  
 
+> **IMPORTANT NOTE**: There will be a fifth benchmark on the competition server where everyone **must** submit a baseline model. The code for training this model is already provided. This benchmark aims to ensure everyone is familiar with working on an HPC cluster. The benchmark will close after **Sunday, March 16, 11:59 P.M. (GMT+1)**, so start preparing your baseline submission early. This will give you time to ask questions during the arranged computer classes if you encounter any issues.
 ---
 
 ## Deliverables  
@@ -31,13 +32,13 @@ The competition comprises four benchmarks, each targeting a specific aspect of m
 Your final submission will consist of the following:  
 
 ### 1. Research paper  
-Write a **4-page research paper** in IEEE double-column format, addressing the following:  
+Write a **3-4 page research paper** in [IEEE double-column format](https://www.overleaf.com/latex/templates/ieee-conference-template/grfzhhncsfqn), addressing (at least) the following:  
 
+- **Abstract**: Summarize the current problems, your key steps for addressing them and your main findings in about 100-300 words.
 - **Introduction**: Present the problem, challenges, and potential solutions based on existing literature.  
-- **Baseline implementation**: Describe your baseline approach and results using an off-the-shelf segmentation model.  
-- **Improvements**: Outline the enhancements you made, supported by experimental results and justifications.  
-- **Discussion**: Discuss limitations and suggest future improvements.  
-- **Figures & tables**: Use clear visuals to support your findings.
+- **Methods**: Describe your dataset(s), outline the baseline approach using an off-the-shelf segmentation model and define the enhancements you made for the specific benchmarks you participated.  
+- **Results**: Show and describe your results based on performance metrics and examples. Use figures and tables to support your findings. 
+- **Discussion**: Discuss the impact and potential of your main findings. Also discuss limitations and suggest future improvements.
 
 > **Submission**: Submit your paper as a PDF document via **Canvas**.
 
@@ -50,7 +51,8 @@ Push all relevant code to a **public GitHub repository** with a README.md file d
 - Your Codalab username and TU/e email address for correct mapping across systems.  
 
 ### 3. Codalab submissions  
-Submit your model for evaluation to the **Codalab challenge server**, which includes four benchmark test sets.  
+Submit your model for evaluation to the [**Codalab challenge server**](https://codalab.lisn.upsaclay.fr/competitions/21622), which includes four benchmark test sets.
+> Make sure to [sign up](https://codalab.lisn.upsaclay.fr/accounts/signup/?next=/) if you do not have an account on Codalab yet.
 
 ---
 
@@ -70,7 +72,7 @@ For example, achieving the best performance in 'Peak Performance' and a top 3 sp
 ## Important Notes  
 
 - Ensure a proper **train-validation split** of the CityScapes dataset.  
-- Training your model may take many hours; plan accordingly.  
+- Training your model may take multiple hours; plan accordingly.  
 - Use ideas from literature but remember to **cite all sources**. Plagiarism will not be tolerated.  
 - For questions or challenges, use the **Discussions** section of this repository to collaborate with peers.  
 

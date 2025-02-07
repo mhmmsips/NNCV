@@ -6,7 +6,4 @@
 #SBTACH --partition=gpu_a100
 #SBTACH --time=00:30:00
 
-set -a
-source .env
-
-srun apptainer exec --nv --env-file .env $CONTAINER /bin/bash main.sh
+srun apptainer exec --nv --env-file .env container.sif /bin/bash main.sh
