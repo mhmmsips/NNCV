@@ -51,7 +51,8 @@ Push all relevant code to a **public GitHub repository** with a README.md file d
 - Your Codalab username and TU/e email address for correct mapping across systems.  
 
 ### 3. Codalab submissions  
-Submit your model for evaluation to the **Codalab challenge server**, which includes four benchmark test sets.  
+Submit your model for evaluation to the [**Codalab challenge server**](https://codalab.lisn.upsaclay.fr/competitions/21622), which includes four benchmark test sets.
+> Make sure to [sign up](https://codalab.lisn.upsaclay.fr/accounts/signup/?next=/) if you do not have an account on Codalab yet.
 
 ---
 
