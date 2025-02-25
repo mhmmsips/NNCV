@@ -8,8 +8,8 @@ This repository includes scripts to help you get started with running your model
 
 Begin by cloning the repository to the HPC cluster and navigating into the appropriate directory:  
 
-```bash  
-git clone https://github.com/<your-username>/<your-repo-name>
+```bash
+git clone "https://<your-username>:<your-api-key>@github.com/<your-username>/<your-repo-name>"
 cd "<your-repo-name>/Final assignment"
 ```
 Replace `<your-username>` and `<your-repo-name>` with your GitHub username and the name of your repository.
