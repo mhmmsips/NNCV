@@ -85,6 +85,8 @@ To start working on the project, follow these steps:
     ```
     You should see your repository URL listed.
 
+> Note that you can also directly change the current URL instead of first deleting it by using `git remote set-url origin https://github.com/<your-username>/<your-repo-name>` instead of step 1 and 2. 
+
 #### Step 4: Push the code to your repository
 1. Push the code from your local machine to your new GitHub repository:
     ```bash
