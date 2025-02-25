@@ -102,7 +102,7 @@ def main(args):
     # Define the model
     model = UNet(
         in_channels=3,  # RGB images
-        out_channels=19,  # 19 classes in the Cityscapes dataset
+        n_classes=19,  # 19 classes in the Cityscapes dataset
     ).to(device)
 
     # Define the loss function
