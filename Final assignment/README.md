@@ -13,7 +13,9 @@ This challenge is designed to push your skills further, focusing on practical an
 The competition comprises four benchmarks, each targeting a specific aspect of model performance:  
 
 1. **Peak performance**  
-   This benchmark serves as your baseline. It evaluates the model's segmentation accuracy on a clean, standard test set. Your goal is to achieve the highest segmentation scores here.  
+   This benchmark evaluates your model's segmentation accuracy on a clean, standardized test set. Your goal is to achieve the highest segmentation scores here. **Everyone should submit a model to this benchmark optimized for maximum performance**. However, it's crucial to implement changes thoughtfully and be able to justify them in your research paper. Ultimately, the focus should be on the scientific contributions of your adaptations rather than solely aiming for the highest score.
+
+The following benchmarks 2–4 are optional, and **you should select one** to compare against the Peak Performance benchmark. This allows you to analyze how your model performs under different conditions and gain deeper insights beyond just optimizing for the highest score.
 
 2. **Robustness**  
    This benchmark tests how well your model performs under challenging conditions, such as changes in lighting, weather, or image quality. Consistency is key in this category.  
@@ -24,7 +26,8 @@ The competition comprises four benchmarks, each targeting a specific aspect of m
 4. **Out-of-distribution detection**  
    Models often encounter data that differs from the training distribution, leading to unreliable predictions. This benchmark evaluates your model's ability to detect and handle such out-of-distribution samples.  
 
-> **IMPORTANT NOTE**: There will be a fifth benchmark on the competition server where everyone **must** submit a baseline model. The code for training this model is already provided. This benchmark aims to ensure everyone is familiar with working on an HPC cluster. The benchmark will close after **Sunday, March 16, 11:59 P.M. (GMT+1)**, so start preparing your baseline submission early. This will give you time to ask questions during the arranged computer classes if you encounter any issues.
+> **IMPORTANT NOTE**: A fifth benchmark, **Baseline**, will be available on the competition server, and all participants must submit a baseline model. The training code for this model is already provided. This benchmark serves two purposes: ensuring that everyone is familiar with working on an HPC cluster and providing a reference point for evaluating the impact of different adaptations in your other benchmark submissions. The Baseline benchmark will close on **Sunday, March 16, at 11:59 P.M. (GMT+1)**. To avoid last-minute issues, start preparing your submission early. This will also give you time to ask questions during the scheduled computer classes if needed.
+
 ---
 
 ## Deliverables  
