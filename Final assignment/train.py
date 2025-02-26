@@ -47,11 +47,10 @@ def convert_train_id_to_color(prediction: torch.Tensor) -> torch.Tensor:
     color_image = torch.zeros((batch, 3, height, width), dtype=torch.uint8)
 
     for train_id, color in train_id_to_color.items():
-        mask = prediction == train_id
-        mask = mask.expand(-1, 3, -1, -1)
+        mask = prediction[:, 0] == train_id
 
-        color_image[mask] = torch.tensor(
-            color, dtype=torch.uint8, device=color_image.device).view(1, 3, 1, 1)
+        for i in range(3):
+            color_image[:, i][mask] = color[i]
 
     return color_image
 
@@ -145,6 +144,7 @@ def main(args):
 
     # Training loop
     best_valid_loss = float('inf')
+    current_best_model_path = None
     for epoch in range(args.epochs):
         print(f"Epoch {epoch+1:04}/{args.epochs:04}")
 
@@ -211,13 +211,13 @@ def main(args):
 
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
-                torch.save(
-                    model.state_dict(),
-                    os.path.join(
-                        output_dir, 
-                        f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
-                    )
+                if current_best_model_path:
+                    os.remove(current_best_model_path)
+                current_best_model_path = os.path.join(
+                    output_dir, 
+                    f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pth"
                 )
+                torch.save(model.state_dict(), current_best_model_path)
         
     print("Training complete!")
 
