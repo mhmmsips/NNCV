@@ -126,6 +126,8 @@ def main(args):
         for i, (images, labels) in enumerate(train_dataloader):
             images, labels = images.to(device), labels.to(device)
 
+            labels = labels.squeeze(1)  # Remove channel dimension
+
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -144,6 +146,8 @@ def main(args):
             losses = []
             for i, (images, labels) in enumerate(valid_dataloader):
                 images, labels = images.to(device), labels.to(device)
+
+                labels = labels.squeeze(1)  # Remove channel dimension
 
                 outputs = model(images)
                 loss = criterion(outputs, labels)
