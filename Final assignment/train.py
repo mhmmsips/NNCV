@@ -168,9 +168,11 @@ def main(args):
             
                 if i == 0:
                     predictions = outputs.argmax(1)
+                    predictions_img = make_grid(predictions.cpu(), nrow=8).permute(1, 2, 0).numpy()
+                    labels_img = make_grid(labels.cpu(), nrow=8).permute(1, 2, 0).numpy()
                     wandb.log({
-                        "predictions": [wandb.Image(make_grid(predictions.cpu(), nrow=8))],
-                        "ground_truth": [wandb.Image(make_grid(labels.cpu(), nrow=8))],
+                        "predictions": [wandb.Image(predictions_img)],
+                        "labels": [wandb.Image(labels_img)],
                     }, step=(epoch + 1) * len(train_dataloader) - 1)
             
             valid_loss = sum(losses) / len(losses)
