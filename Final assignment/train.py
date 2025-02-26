@@ -133,15 +133,16 @@ def main(args):
         # Training
         model.train()
         for i, (images, labels) in enumerate(train_dataloader):
-            images, labels = images.to(device), labels.to(device)
 
             print(labels.min(), labels.max())  # Debugging
 
             labels = convert_to_train_id(labels)
+
+            images, labels = images.to(device), labels.to(device)
+
             labels = labels.long().squeeze(1)  # Remove channel dimension
 
             print(labels.min(), labels.max())  # Debugging
-            train_dataset.classes
 
             optimizer.zero_grad()
             outputs = model(images)
