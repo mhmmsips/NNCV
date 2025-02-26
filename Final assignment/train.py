@@ -128,6 +128,8 @@ def main(args):
 
             labels = labels.long().squeeze(1)  # Remove channel dimension
 
+            print(labels.min(), labels.max())  # Debugging
+
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
