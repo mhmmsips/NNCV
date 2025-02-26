@@ -111,7 +111,7 @@ def main(args):
     ).to(device)
 
     # Define the loss function
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=255)  # Ignore the void class
 
     # Define the optimizer
     optimizer = AdamW(model.parameters(), lr=args.lr)
