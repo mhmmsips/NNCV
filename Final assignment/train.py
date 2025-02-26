@@ -20,7 +20,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
-from torchvision.datasets import Cityscapes
+from torchvision.datasets import Cityscapes, wrap_dataset_for_transforms_v2
 from torchvision.utils import make_grid
 from torchvision.transforms.v2 import (
     Compose,
@@ -90,6 +90,9 @@ def main(args):
         target_type="semantic", 
         transforms=transform
     )
+
+    train_dataset = wrap_dataset_for_transforms_v2(train_dataset)
+    valid_dataset = wrap_dataset_for_transforms_v2(valid_dataset)
 
     train_dataloader = DataLoader(
         train_dataset, 
