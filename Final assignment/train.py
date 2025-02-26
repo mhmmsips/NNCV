@@ -36,7 +36,7 @@ from unet import UNet
 
 id_to_trainid = {cls.id: cls.train_id for cls in Cityscapes.classes}  # Convert class IDs to train IDs
 def convert_to_train_id(label_img: torch.Tensor) -> torch.Tensor:
-    return label_img.apply_(lambda x: id_to_trainid[x.item()])
+    return label_img.apply_(lambda x: id_to_trainid[x])
 
 
 def get_args_parser():
