@@ -28,7 +28,6 @@ from torchvision.transforms.v2 import (
     Resize,
     ToImage,
     ToDtype,
-    ToTensor,
 )
 
 from unet import UNet
