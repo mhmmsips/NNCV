@@ -167,9 +167,9 @@ def main(args):
                 losses.append(loss.item())
             
                 if i == 0:
-                    predictions = outputs.argmax(1)
-                    predictions_img = make_grid(predictions.cpu(), nrow=8).permute(1, 2, 0).numpy()
-                    labels_img = make_grid(labels.cpu(), nrow=8).permute(1, 2, 0).numpy()
+                    predictions = outputs.softmax(1).argmax(1)
+                    predictions_img = make_grid(predictions.unsqueeze(1).cpu(), nrow=8).permute(1, 2, 0).numpy()
+                    labels_img = make_grid(labels.unsqueeze(1).cpu(), nrow=8).permute(1, 2, 0).numpy()
                     wandb.log({
                         "predictions": [wandb.Image(predictions_img)],
                         "labels": [wandb.Image(labels_img)],
