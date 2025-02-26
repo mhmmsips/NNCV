@@ -21,10 +21,13 @@ import torch.nn as nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
+from torchvision.utils import make_grid
 from torchvision.transforms.v2 import (
     Compose,
     Normalize,
-    ToTensor,
+    Resize,
+    ToImage,
+    ToDtype,
 )
 
 from unet import UNet
@@ -66,7 +69,9 @@ def main(args):
 
     # Define the transforms to apply to the data
     transform = Compose([
-        ToTensor(), 
+        ToImage(),
+        Resize((256, 256)),
+        ToDtype(torch.float32),
         Normalize((0.5,), (0.5,)),
     ])
 
@@ -137,12 +142,19 @@ def main(args):
         model.eval()
         with torch.no_grad():
             losses = []
-            for (images, labels) in valid_dataloader:
+            for i, (images, labels) in enumerate(valid_dataloader):
                 images, labels = images.to(device), labels.to(device)
 
                 outputs = model(images)
                 loss = criterion(outputs, labels)
                 losses.append(loss.item())
+            
+                if i == 0:
+                    predictions = outputs.argmax(1)
+                    wandb.log({
+                        "predictions": [wandb.Image(make_grid(predictions.cpu(), nrow=8))],
+                        "ground_truth": [wandb.Image(make_grid(labels.cpu(), nrow=8))],
+                    }, step=(epoch + 1) * len(train_dataloader) - 1)
             
             valid_loss = sum(losses) / len(losses)
             wandb.log({
