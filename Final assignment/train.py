@@ -76,8 +76,9 @@ def main(args):
 
     # Define the transforms to apply to the data
     transform = Compose([
-        # Resize((256, 256)),
-        ToTensor(),
+        ToImage(),
+        Resize((256, 256)),
+        ToDtype(torch.float32, scale=True),
         Normalize((0.5,), (0.5,)),
     ])
 
@@ -134,15 +135,10 @@ def main(args):
         model.train()
         for i, (images, labels) in enumerate(train_dataloader):
 
-            print(labels.min(), labels.max())  # Debugging
-
-            labels = convert_to_train_id(labels)
-
+            labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
             images, labels = images.to(device), labels.to(device)
 
             labels = labels.long().squeeze(1)  # Remove channel dimension
-
-            print(labels.min(), labels.max())  # Debugging
 
             optimizer.zero_grad()
             outputs = model(images)
@@ -161,6 +157,8 @@ def main(args):
         with torch.no_grad():
             losses = []
             for i, (images, labels) in enumerate(valid_dataloader):
+
+                labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
                 images, labels = images.to(device), labels.to(device)
 
                 labels = labels.long().squeeze(1)  # Remove channel dimension
