@@ -28,6 +28,7 @@ from torchvision.transforms.v2 import (
     Resize,
     ToImage,
     ToDtype,
+    ToTensor,
 )
 
 from unet import UNet
@@ -69,9 +70,8 @@ def main(args):
 
     # Define the transforms to apply to the data
     transform = Compose([
-        ToImage(),
-        Resize((256, 256)),
-        ToDtype(torch.float32),
+        # Resize((256, 256)),
+        ToTensor(),
         Normalize((0.5,), (0.5,)),
     ])
 
@@ -125,6 +125,8 @@ def main(args):
         model.train()
         for i, (images, labels) in enumerate(train_dataloader):
             images, labels = images.to(device), labels.to(device)
+
+            print(labels.min(), labels.max())  # Debugging
 
             labels = labels.long().squeeze(1)  # Remove channel dimension
 
