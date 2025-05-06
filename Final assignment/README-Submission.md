@@ -71,6 +71,8 @@ again, easy points! 😃
 - Avoid snipping ugly graphs from tools like Weights & Biases or tables from Excel. These can make your report look unprofessional. Instead, spend some time creating clean, high-quality visuals that enhance your paper.  
 - Loss curves often take up a lot of space and are usually not very relevant to your results. Only include them if they are essential for your discussion (e.g., to demonstrate convergence or other critical insights).  
 
+![](img/table_example.png)
+
 ### 4. **Don’t Overload with Technical Terminology**  
 - Write for a general audience with a technical background. Avoid unnecessary complexity.  
 
