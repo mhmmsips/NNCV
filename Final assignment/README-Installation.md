@@ -1,9 +1,7 @@
 # Getting Started Guide
-
 Welcome to the `Final Assignment` repository! This guide will help you set up your environment and tools necessary for your work on our project using a remote High-Performance Computing (HPC) cluster.
 
 ## Environment Setup
-
 ### Visual Studio Code (VSCode)
 We'll use VSCode as our Integrated Development Environment (IDE) for Python development. VSCode offers:
 - **Lightweight and Fast**: A robust editor without being resource-heavy.
@@ -39,10 +37,7 @@ To connect to the remote HPC cluster, we'll use MobaXTerm. It provides:
 
 Download and installation instructions can be found [here](https://mobaxterm.mobatek.net/).
 
----
-
 ## Basic Usage
-
 ### VSCode
 - Open VSCode and open your project folder.
 - Use the integrated terminal (`Ctrl + Shift + \``) for running scripts and managing Git.
@@ -52,49 +47,79 @@ Download and installation instructions can be found [here](https://mobaxterm.mob
     - **Remote - SSH**: Enables editing files on the HPC cluister directly from VSCode (optional).
 
 ### GitHub
-To start working on the project, follow these steps:
+#### Overview
+You will work with **two repositories**:
+- **Your fork** (where you push your own work)
+- **The course repository** (which you pull updates from)
 
-#### Step 1: Clone the repository
-1. Open a terminal or the VSCode terminal on your local system.
-2. Clone this repository to your local machine:  
-    ```bash
-    git clone https://github.com/TUE-VCA/NNCV
-    ```
-3. Navigate into the cloned repository directory:
-    ```bash
-    cd NNCV
-    ```
+When you **fork and then clone your fork**, GitHub automatically sets this up correctly:
+- `origin` → your fork
+- `upstream` → the original course repository
 
-#### Step 2: Create your own repository on GitHub
-1. Log in to your GitHub account.
-2. Create a new repository. For example, name it `NNCV`. Leave it empty (do not initialize with a README or .gitignore).
+This is the **recommended and expected workflow** for this assignment.
 
-#### Step 3: Change the Git Remote to your repository
-1. Remove the existing remote link to the original repository:
-    ```bash
-    git remote remove origin
-    ```
-2. Add your own repository as the new remote:
-    ```bash
-    git remote add origin https://github.com/<your-username>/<your-repo-name>
-    ```
-    Replace `<your-username>` and `<your-repo-name>` with your GitHub username and the name of your new repository.
-3. Verify the new remote:
-    ```bash
-    git remote -v
-    ```
-    You should see your repository URL listed.
+#### Step 1: Fork the repository
+1. Go to the course repository on GitHub: https://github.com/TUE-VCA/NNCV
+2. Click the **Fork** button (top-right corner)
+3. Select your own GitHub account
 
-> IMPORTANT NOTE: you can also directly change the current URL instead of first deleting it by using `git remote set-url origin https://github.com/<your-username>/<your-repo-name>` instead of step 1 and 2. This gives you the opportunity to use `git remote set-url --push origin https://github.com/<your-username>/<your-repo-name>` to only change the remote to where we push our code. That way you can still pull from the original directory to have the latest updates.
+This creates your personal copy of the repository.
 
-#### Step 4: Push the code to your repository
-1. Push the code from your local machine to your new GitHub repository:
-    ```bash
-    git push -u origin main
-    ```
-    Replace `main` with the branch name if it is different.
+#### Step 2: Clone *your fork*
+Clone **your fork**, not the original repository:
 
-> For how to pull this repository to the HPC and submit a job to the cluster, check the `README-Slurm.md` file.
+```bash
+git clone https://github.com/<your-username>/NNCV.git
+cd NNCV
+```
+
+Verify the remotes:
+
+```bash
+git remote -v
+```
+
+You should see:
+- `origin` → your fork
+- `upstream` → the original course repository
+
+> If upstream is missing, you can add it manually:
+> ```bash
+> git remote add upstream https://github.com/TUE-VCA/NNCV.git
+> ```
+
+#### Step 3: Working on the assignment
+- Make changes locally or on the server
+- Commit frequently with meaningful commit messages
+- Push only to your fork:
+
+```bash
+git commit -m "Commit message"
+git push origin main
+```
+
+#### Step 4: Pull updates from the course repository
+We may push bug fixes or clarifications to the course repository. To stay up to date:
+
+```bash
+git fetch upstream
+git rebase upstream/main
+```
+
+Then push the updated history back to your fork:
+
+```bash
+git push --force-with-lease origin main
+```
+
+#### Important rules
+- ❌ Do **not** push to the course repository
+- ❌ Do **not** remove the `upstream` remote
+- ✅ Always submit your work via **your fork**
+
+#### HPC Usage and Job Submission
+For instructions on cloning your fork on the HPC cluster and submitting jobs, see:
+`README-Slurm.md`
 
 ### MobaXTerm
 - Connect to the remote server:
@@ -107,11 +132,21 @@ To start working on the project, follow these steps:
  > TIP: Save your sessions in MobaXTerm for faster connections in the future.
 
 ## Additional tips
-1. **SSH Key Managment**: To avoid typing your password repeatedly when using Git or W&B, set up an API key. 
-    - **GitHub**: Go to **Settings** > **Developer settings** > **Personal access tokens** > **Tokens (classic)** and create a personal access token. Then on the server, change your clone command to: 
-        ```bash
-        git clone https://<your-username>:<your-api-key>@github.com/<your-username>/<your-repo-name>
-        ```
-        This will make sure that everytime you will perform a `git` operation (e.g., `git pull`) in the future within this repo, your will automatically be logged in.
-    - **W&B**: Go to **User settings** > **API keys** and create a new key. You can leave this key as is for now. More instructions on how to use this key are specified in the `README-Slurm.md` file.
-2. **Debugging in VSCode**: Use breakpoints and the built-in debugger for easier code debugging. Learn more about debugging in Python [here](http://code.visualstudio.com/docs/python/debugging).
+### SSH & Authentication
+To avoid repeated password prompts:
+
+#### Github
+- Create a Personal Access Token:
+  Settings → Developer settings → Personal access tokens
+- Use it when cloning on the HPC cluster:
+  ```bash
+  git clone https://<username>:<token>@github.com/<username>/NNCV.git
+  ```
+
+#### Weights & Biases
+- Create an API key in your W&B account settings
+- Usage instructions are provided in `README-Slurm.md`
+
+### Debugging in VS Code
+Use breakpoints and the built-in debugger.
+Documentation: http://code.visualstudio.com/docs/python/debugging.
