@@ -2,22 +2,38 @@ import torch
 import torch.nn as nn
 
 
-class UNet(nn.Module):
+class Model(nn.Module):
     """ 
     A simple U-Net architecture for image segmentation.
     Based on the U-Net architecture from the original paper:
     Olaf Ronneberger et al. (2015), "U-Net: Convolutional Networks for Biomedical Image Segmentation"
     https://arxiv.org/pdf/1505.04597.pdf
-    """
-    def __init__(self, in_channels=3, n_classes=1):
-        
-        super(UNet, self).__init__()
 
+    Adapt this model as needed for your problem-specific requirements. You can make multiple model classes and compare them,
+    however, the CodaLab server requires the model class to be named "Model". Also, it will use the default values of the constructor
+    to create the model, so make sure to set the default values of the constructor to the ones you want to use for your submission.
+    """
+    def __init__(
+        self, 
+        in_channels=3, 
+        n_classes=19
+    ):
+        """
+        Args:
+            in_channels (int): Number of input channels. Default is 3 for RGB images.
+            n_classes (int): Number of output classes. Default is 19 for the Cityscapes dataset.
+        """
+        
+        super().__init__()
+
+        # Encoding path
         self.inc = (DoubleConv(in_channels, 64))
         self.down1 = (Down(64, 128))
         self.down2 = (Down(128, 256))
         self.down3 = (Down(256, 512))
         self.down4 = (Down(512, 512))
+
+        # Decoding path
         self.up1 = (Up(1024, 256))
         self.up2 = (Up(512, 128))
         self.up3 = (Up(256, 64))
@@ -25,11 +41,24 @@ class UNet(nn.Module):
         self.outc = (OutConv(64, n_classes))
 
     def forward(self, x):
+        """
+        Forward pass through the model.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, in_channels, height, width).
+        """
+        # Check if the input tensor has the expected number of channels
+        if x.shape[1] != self.inc[0].in_channels:
+            raise ValueError(f"Expected {self.inc[0].in_channels} input channels, but got {x.shape[1]}")
+        
+        # Encoding path
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
+
+        # Decoding path
         x = self.up1(x5, x4)
         x = self.up2(x, x3)
         x = self.up3(x, x2)

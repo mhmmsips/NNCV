@@ -1,48 +1,89 @@
 # Running Jobs on the SLURM Cluster  
+This document explains how to run your experiments on the SLURM-based HPC cluster using Apptainer containers.
 
-This repository includes scripts to help you get started with running your models on a SLURM cluster. Follow the steps below to set up your environment, configure your API keys, and submit a job to the server.  
+You will:
+1. Work with a copy of your repository on the cluster
+2. Download shared data and the container (once)
+3. Configure environment variables
+4. Submit training jobs via SLURM
 
----
+You have **two ways of working**, and **both are allowed**:
 
-## Step 1: Clone the Repository  
+### Option A (recommended): Edit locally
+- Edit code on your local machine
+- `git push` your changes
+- `git pull` on the cluster before submitting jobs
 
-Begin by cloning the repository to the HPC cluster and navigating into the appropriate directory:  
+### Option B (advanced): Edit directly on the cluster
+- SSH into the cluster using **VSCode Remote-SSH**
+- Edit files directly on the server
+- Commit and push from the cluster
+
+Choose the workflow that you are most comfortable with.
+
+Regardless of the option:
+- SLURM always runs your code **on the cluster**
+- Execution happens **inside a container**, not on the host system
+
+## Step 1: Clone Your Repository on the Cluster
+Log in to the HPC cluster and clone **your fork** of the repository:
 
 ```bash
-git clone "https://<your-username>:<your-api-key>@github.com/<your-username>/<your-repo-name>"
-cd "<your-repo-name>/Final assignment"
+git clone https://github.com/<your-username>/NNCV.git
+cd NNCV
 ```
-Replace `<your-username>` and `<your-repo-name>` with your GitHub username and the name of your repository.
 
-## Step 2: Download the Prerequisites
+Keep this copy up to date:
+```bash
+git pull
+```
+> Always make sure your cluster copy reflects the code you want to run.
 
-We have stored all the necessary training and validation data, alongside with a Docker container that contains all the necessary modules, on a Huggingface page. To download these into the directory, submit the following script to SLURM and wait until the job has finished. This should leave you with a folder `data` and a `container.sif` file.
+### Editing Code on the Cluster (Optional)
+If you prefer, you can edit code directly on the server using VSCode:
+1. Install the Remote – SSH extension in VSCode
+2. Connect to the cluster via SSH
+3. Open the repository folder on the server
+4. Edit, commit, and push as usual
+
+This workflow avoids repeated syncing between local and cluster environments but requires a stable SSH connection.
+
+## Step 2: Download Data and Container (One-Time Setup)
+The training data and container are hosted on Hugging Face.
+
+Run the download script once using SLURM:
 
 ```bash
 chmod +x download_docker_and_data.sh
 sbatch download_docker_and_data.sh
 ```
 
+After the job finishes, you should see:
+- a `data/` directory
+- a `container.sif` file
+
 > Note that we first add execution rights to the file to avoid any errors. You only have to do this once.
 
-## Step 3: Configure Paths and API Keys
+## Step 3: Configure Environment Variables
+The `.env` file defines environment variables that are passed into the container.
 
-The `.env` file in this repository is used to set up environment variables required for your job. Update this file to include the correct paths and your API keys:
+Edit the file:
 
-1. Open the `.env` file using a text editor:
+```bash
+nano .env
+ ```
 
-   ```bash
-   nano .env
-   ```
+(or use the VSCode or MobaXTerm file browser)
 
-   If you are using MobaXTerm, you can also just open it using the file explorer windown on the right side.
+Set at least:
 
-2. Update the following variables:
+- `WANDB_API_KEY`: Your Weights & Biases API key (for logging experiments).
+- `WANDB_DIR`: Path to the directory where the logs will be stored.
 
-   - `WANDB_API_KEY`: Your Weights & Biases API key (for logging experiments).
-   - `WANDB_DIR`: Path to the directory where the logs will be stored.
-
-3. Save and exit the file.
+Example:
+```env
+WANDB_API_KEY=xxxxxxxxxxxxxxxxxxxxx
+WANDB_DIR=/home/<username>/wandb
 
 ## Step 4: Submit a Job to the Cluster
 
@@ -55,12 +96,9 @@ chmod +x jobscript_slurm.sh
 sbatch jobscript_slurm.sh
 ```
 
-Once submitted, SLURM will schedule your job, and the cluster will handle the execution.
-
----
+SLURM will queue and execute your job when resources are available.
 
 ## Explaination of SLURM Parameters
-
 The `jobscript_slurm.sh` file includes several SLURM-specific directives (denoted by #SBATCH). Here’s a brief explanation of these commands:
 
 - `#SBATCH --nodes=1`  
@@ -76,10 +114,7 @@ The `jobscript_slurm.sh` file includes several SLURM-specific directives (denote
 - `#SBATCH --time=00:30:00`  
    Sets a time limit of 30 minutes for the job. Adjust this value based on your expected runtime.
 
----
-
 ## Understanding the Scripts
-
 `jobscript_slurm.sh`
 
 This is the job submission script. It runs the `main.sh` script inside the specified container using `apptainer exec`.
@@ -121,10 +156,7 @@ python3 train.py \
 
 If you need to make any changes to the input arguments of your script (e.g., change the `experiment-id` to avoid you are overwriting the results of your previous experiment), this is the place to be.
 
----
-
 ## Notes
-
 - **Monitor your job**: Use the `squeue` command to check the status of your submitted jobs.
 - **Check logs**: SLURM will create log files (`slurm-<job_id>.out`) where you can see the output of your job.
 - **Adjust resources**: Modify the SLURM parameters in `jobscript_slurm.sh` to suit your task’s resource requirements.

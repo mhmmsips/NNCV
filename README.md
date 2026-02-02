@@ -1,6 +1,6 @@
 # 5LSM0: Neural Networks for Computer Vision
 
-Welcome to the repository for **5LSM0: Neural Networks for Computer Vision**, a course offered by the Department of Electrical Engineering at Eindhoven University of Technology. This course is hosted by the [Video Coding & Architectures research group](https://www.tue.nl/en/research/research-groups/signal-processing-systems/video-coding-architectures).
+Welcome to the repository for **5LSM0: Neural Networks for Computer Vision**, a course offered by the Department of Electrical Engineering at Eindhoven University of Technology. This course is hosted by the [Architectures for Relaible Image Analysis Lab](https://github.com/TUE-ARIA).
 
 ## Overview
 
@@ -21,6 +21,8 @@ The **final assignment** is the cornerstone of this course and accounts for **50
 
 This final assignment requires a deeper dive into the subject, pushing you to apply the knowledge and skills gained throughout the course.
 
+The final assignment will start in week 3 (February 24th), once all core lectures have been completed, ensuring you have the necessary foundation to work on the project.
+
 ## Authors and Contact
 
 This course material is developed and maintained by the following contributors:  
@@ -34,8 +36,8 @@ This course material is developed and maintained by the following contributors:
 - **Francisco De Espírito Santo e Caetano**  
   Email: [f.t.de.espirito.santo.e.caetano@tue.nl](mailto:f.t.de.espirito.santo.e.caetano@tue.nl)
 
-- **Carolus (Koen) H.J Kusters**  
-  Email: [c.h.j.kusters@tue.nl](mailto:c.h.j.kusters@tue.nl)
+- **Lemar Abdi**  
+  Email: [l.abdi@tue.nl](mailto:l.abdi@tue.nl)
 
 - **dr. Christiaan G.A. Viviers**  
   Email: [c.g.a.vivers@tue.nl](mailto:c.g.a.vivers@tue.nl)
