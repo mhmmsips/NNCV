@@ -26,7 +26,7 @@ The following benchmarks 2–4 are optional, and **you should select one** to co
 4. **Out-of-distribution detection**  
    Models often encounter data that differs from the training distribution, leading to unreliable predictions. This benchmark evaluates your model's ability to detect and handle such out-of-distribution samples.  
 
-> **IMPORTANT NOTE**: A fifth benchmark, **Baseline**, will be available on the competition server, and all participants must submit a baseline model. The training code for this model is already provided. This benchmark serves two purposes: ensuring that everyone is familiar with working on an HPC cluster and providing a reference point for evaluating the impact of different adaptations in your other benchmark submissions. The Baseline benchmark will close on **Sunday, March 16, at 11:59 P.M. (GMT+1)**. To avoid last-minute issues, start preparing your submission early. This will also give you time to ask questions during the scheduled computer classes if needed.
+> **IMPORTANT NOTE**: A fifth benchmark, **Baseline**, will be available on the competition server, and all participants must submit a baseline model. The training code for this model is already provided. This benchmark serves two purposes: ensuring that everyone is familiar with working on an HPC cluster and providing a reference point for evaluating the impact of different adaptations in your other benchmark submissions. The Baseline benchmark will close on **Tuesday, March 17, at 11:59 P.M. (GMT+1)**. To avoid last-minute issues, start preparing your submission early. This will also give you time to ask questions during the scheduled computer classes if needed.
 
 ---
 
@@ -53,9 +53,10 @@ Push all relevant code to a **public GitHub repository** with a README.md file d
 - Steps to run your code.  
 - Your Codalab username and TU/e email address for correct mapping across systems.  
 
-### 3. Codalab submissions  
-Submit your model for evaluation to the [**Codalab challenge server**](https://codalab.lisn.upsaclay.fr/competitions/21622), which includes four benchmark test sets.
-> Make sure to [sign up](https://codalab.lisn.upsaclay.fr/accounts/signup/?next=/) if you do not have an account on Codalab yet.
+### 3. Challenge platform submissions  
+The Cityscape Challenge will be hosted on a **dedicated course compute platform** (instead of Codalab used in previous years).
+
+You will receive clear, step-by-step instructions for making submission once the final assignment begins.
 
 ---
 

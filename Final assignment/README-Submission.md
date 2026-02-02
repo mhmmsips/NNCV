@@ -7,7 +7,7 @@ Hi there! 🎉 Congratulations on making it to the final stages of this course. 
 ## Do’s ✅  
 
 ### 1. **Use Test Set Results**  
-- Always report results from the **test set** as evaluated by the CodaLab challenge submission server.  
+- Always report results from the **test set** as evaluated by the Challenge submission server.  
 - Validation results from your own train-validation split are useful for debugging and hyperparameter tuning, but they are **not** a substitute for test set results.
 - Simply stating that *"the model was not converged"* as a reason for underperformance is **not good enough**. We provide sufficient compute for everyone to train their models properly. Make sure your models are fully trained and converged, and report the test set results from the model that gave optimal performance on your validation set.  
 
