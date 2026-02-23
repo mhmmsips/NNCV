@@ -1,95 +1,153 @@
-# Submission Guidelines: Writing a Great Report  
+# Challenge Submission Guide
 
-Hi there! 🎉 Congratulations on making it to the final stages of this course. Writing a strong report is just as important as training a great model. Your report is the primary way we evaluate your work, so let’s make sure it reflects all the effort you’ve put into this project. Below are some do’s and don’ts to help you write a publication-grade report for your final submission.  
+This guide explains how to package your trained model into a self-contained Docker image, export it to a `.tar` file, and submit it to the challenge server.
 
----
-
-## Do’s ✅  
-
-### 1. **Use Test Set Results**  
-- Always report results from the **test set** as evaluated by the Challenge submission server.  
-- Validation results from your own train-validation split are useful for debugging and hyperparameter tuning, but they are **not** a substitute for test set results.
-- Simply stating that *"the model was not converged"* as a reason for underperformance is **not good enough**. We provide sufficient compute for everyone to train their models properly. Make sure your models are fully trained and converged, and report the test set results from the model that gave optimal performance on your validation set.  
-
-### 2. **Include Results for Multiple Benchmarks**  
-- We expect to see results and baseline comparisons for at least **two benchmarks**: peak performance and one other.  
-- Make sure to include both benchmarks in your report, along with methodological improvements, results, and discussions.  
-- For clarity, it is advised to create separate subsections for the different benchmarks and their respective baselines. This helps structure your report and makes it easier to follow.  
-
-### 3. **Be Clear and Structured**  
-- Include the following sections:  
-  - **Abstract**: A short summary of your problem, approach, and key findings.  
-  - **Introduction**: Explain the problem, its challenges, and your motivation.  
-  - **Methods**: Describe your dataset, baseline model, and any improvements you made.  
-  - **Results**: Present your findings with clear tables, graphs, and explanations. Include qualitative examples (e.g., segmentation outputs) to help convey your model’s performance effectively.
-  - **Discussion**: Reflect on your results, limitations, and potential future work.  
-
-### 4. **Follow the IEEE Format**  
-- Use the [IEEE double-column format](https://www.overleaf.com/latex/templates/ieee-conference-template/grfzhhncsfqn) for your report.  
-- Keep it concise: **3-4 pages** is the target length.  
-- We strongly advise you to use all 4 pages to provide as much detail as possible. However, do not exceed 4 pages, as any text (excluding references) beyond this limit will **not** be included for grading.  
-
-### 5. **Use Visuals Effectively**  
-- Include **figures** and **tables** to support your findings.  
-- Label all visuals clearly and reference them in the text (e.g., "As shown in Figure 1...").  
-- Nice visuals really help in understanding what you did and can give a great overall impression of your paper. Spend some time making them clear and professional.  
-- Make sure the text inside figures and tables is large enough to be easily readable (no smaller than 2 font sizes below the default text font size).  
-- In a double-column format, you can use the `figure*` environment in LaTeX to spread an image across both columns if needed.  
-
-### 6. **Cite Your Sources**  
-- If you use ideas, methods, or code from other papers or repositories, **cite them properly**.  
-- Use a consistent citation style (e.g., IEEE).  
-- Don’t forget to add a reference to your code (e.g., GitHub repository) in the paper. Usually, this is done at the end of the **Introduction** or in the **Methods** section. For example:  
-  *"The code used to produce the results presented in this paper is publicly available at [https://www.github.com/.../...](https://www.github.com/.../...)."* Easy points! 😃  
-
-### 7. **Proofread Your Report**  
-- Check for grammar, spelling, and formatting errors.  
-- It’s fine to use tools like GenAI (e.g., ChatGPT) to check your grammar and spelling, but a report written by GenAI will be considered **plagiarism**.  
-- Ask a peer to review your report for clarity and coherence.  
-
-### 8. **Include a Clear README in Your Repository**  
-- Make sure your submitted repository includes a well-written **README** file.  
-- The README should clearly explain how to reproduce your results, including:  
-  - Installation instructions for dependencies.  
-  - Steps to preprocess the data.  
-  - Commands to train and evaluate your model.  
-  - Any additional details required to replicate your findings.  
-- A clear and detailed README makes it easier for us to evaluate your work and ensures reproducibility.  
+It is based on:
+- `predict.py`, including `Model`, `preprocess`, `postprocess`, and `main`
+- `model.py`
+- `Dockerfile`
+- `train.py`
 
 ---
 
-## Don’ts ❌  
+## 1. What the server expects
 
-### 1. **Don’t Use Validation Results as Final Results**  
-- Reporting validation results instead of test set results is a common mistake. The test set is the **only** reliable benchmark for your model’s performance.  
+Your container runs `predict.py` as entrypoint (see `Dockerfile`).
 
-### 2. **Don’t Ignore the Baseline**  
-- Always compare your results to the provided baseline model. This helps us understand the impact of your improvements. The code for training the baseline has already been provided to you, so 
-again, easy points! 😃  
+Inside the container, paths are fixed:
 
-### 3. **Don’t Use Low-Quality Visuals**  
-- Avoid snipping ugly graphs from tools like Weights & Biases or tables from Excel. These can make your report look unprofessional. Instead, spend some time creating clean, high-quality visuals that enhance your paper.  
-- Loss curves often take up a lot of space and are usually not very relevant to your results. Only include them if they are essential for your discussion (e.g., to demonstrate convergence or other critical insights).  
+- Input images: `IMAGE_DIR = "/data"`
+- Output predictions: `OUTPUT_DIR = "/output"`
+- Model weights: `MODEL_PATH = "/app/model.pt"`
 
-![](img/table_example.png)
-
-### 4. **Don’t Overload with Technical Terminology**  
-- Write for a general audience with a technical background. Avoid unnecessary complexity.  
-
-### 5. **Don’t Skip the Discussion Section**  
-- A good report doesn’t just present results; it reflects on them. Discuss what worked, what didn’t, and why.  
-
-### 6. **Don’t Plagiarize**  
-- Plagiarism will result in a **zero** for your report. Always give credit where it’s due.  
+`predict.py` loads `Model` with strict weights loading.
+So your `/app/model.pt` **must match** the architecture in `model.py`.
 
 ---
 
-## Final Tips 💡  
+## 2. Put your best trained checkpoint in place
 
-- **Start Early**: Writing a good report takes time. Don’t leave it for the last minute!  
-- **Ask for Help**: If you’re unsure about something, reach out to us or your peers. Use the **Discussions** section of the repository to collaborate.  
-- **Be Honest**: If your model didn’t perform as expected, that’s okay! A well-analyzed failure can be just as valuable as a success.  
+Training saves checkpoints from `train.py`, typically under:
+`checkpoints/<experiment-id>/...`
 
-We’re excited to read your reports and see the amazing work you’ve done. Good luck, and happy writing! 🚀  
+Pick your best checkpoint and copy/rename it to:
+
+- `Final assignment/model.pt`
+
+Example from repo root:
+
+```bash
+cp "Final assignment/checkpoints/unet-training/best_model-epoch=....pt" "Final assignment/model.pt"
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item "Final assignment\checkpoints\unet-training\best_model-epoch=....pt" "Final assignment\model.pt"
+```
 
 ---
+
+## 3. Build the Docker image
+
+From repo root:
+
+```bash
+docker build -t nncv-submission:latest -f "Final assignment/Dockerfile" "Final assignment"
+```
+
+This creates a self-contained image with:
+- `predict.py`
+- `model.py`
+- `model.pt`
+
+---
+
+## 4. Test locally before exporting
+
+Create local folders:
+- `./local_data` with `.png` images
+- `./local_output` for predictions
+
+Run (Linux/macOS shell):
+
+```bash
+docker run --rm \
+  -v "$(pwd)/local_data:/data" \
+  -v "$(pwd)/local_output:/output" \
+  nncv-submission:latest
+```
+
+Run (Windows PowerShell):
+
+```powershell
+docker run --rm `
+  -v "${PWD}\local_data:/data" `
+  -v "${PWD}\local_output:/output" `
+  nncv-submission:latest
+```
+
+Expected behavior:
+- It reads all `*.png` from `/data`
+- It writes predicted masks to `/output` (same filenames)
+
+---
+
+## 5. Export image to `.tar` for submission
+
+```bash
+docker save -o nncv_submission.tar nncv-submission:latest
+```
+
+You then submit `nncv_submission.tar`.
+
+---
+
+## 6. Challenge server endpoints
+
+These servers are only reachable from TU/e network or VPN.
+
+1. **Baseline / Peak Performance**  
+	http://131.155.126.249:5001/
+
+2. **Robustness**  
+	http://131.155.126.249:5002/
+
+3. **Efficiency**  
+	http://131.155.126.249:5003/
+
+4. **Out-of-Distribution**  
+	http://131.155.126.249:5004/
+
+---
+
+## 7. Recommended workflow per benchmark
+
+- Keep one stable baseline image/tag.
+- Create separate model variants per benchmark.
+- Export each as a separate tar, for example:
+  - `submission_baseline_peak.tar`
+  - `submission_robustness.tar`
+  - `submission_efficiency.tar`
+  - `submission_ood.tar`
+
+Example:
+
+```bash
+docker build -t nncv-submission:efficiency -f "Final assignment/Dockerfile" "Final assignment"
+docker save -o submission_efficiency.tar nncv-submission:efficiency
+```
+
+---
+
+## 8. Common failure checks
+
+- `model.pt` missing from `Final assignment/` before build.
+- `model.pt` incompatible with `Model` in `model.py`.
+- Predictions not saved as single-channel class-index PNG masks.
+- Input/output paths changed from `/data` and `/output`.
+- Built from wrong Docker context (must include `predict.py`, `model.py`, `model.pt`).
+
+---
+
+Good practice: test the container locally end-to-end before every submission.

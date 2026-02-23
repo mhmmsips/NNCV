@@ -37,6 +37,22 @@ To connect to the remote HPC cluster, we'll use MobaXTerm. It provides:
 
 Download and installation instructions can be found [here](https://mobaxterm.mobatek.net/).
 
+### Docker (Required for challenge submission)
+For challenge submission, your model must be packaged as a self-contained Docker image and exported to a `.tar` file.
+
+- Install **Docker Desktop**: https://www.docker.com/products/docker-desktop/
+- During installation, keep default settings unless your system requires specific changes.
+- After installation, start Docker Desktop and wait until it reports that Docker is running.
+
+To verify installation, run:
+
+```bash
+docker --version
+docker run --rm hello-world
+```
+
+If these commands work, Docker is ready for building and testing your submission container.
+
 ## Basic Usage
 ### VSCode
 - Open VSCode and open your project folder.
@@ -130,6 +146,39 @@ For instructions on cloning your fork on the HPC cluster and submitting jobs, se
         - **Specify username**: check box + `<your-username>`.
     - Click **OK**.
  > TIP: Save your sessions in MobaXTerm for faster connections in the future.
+
+### Docker
+- Build your submission image from the `Final assignment` folder:
+  ```bash
+  docker build -t nncv-submission:latest -f "Final assignment/Dockerfile" "Final assignment"
+  ```
+- Test locally with mounted input/output folders:
+  ```bash
+  docker run --rm -v "${PWD}/local_data:/data" -v "${PWD}/local_output:/output" nncv-submission:latest
+  ```
+- Export image as a `.tar` file for upload:
+  ```bash
+  docker save -o nncv_submission.tar nncv-submission:latest
+  ```
+
+For full submission details and challenge server endpoints, see `README-Submission.md`.
+
+## Installation verification checklist
+Before starting the assignment, confirm all required tools are available:
+
+- VS Code opens and can open this repository.
+- Git is installed:
+  ```bash
+  git --version
+  ```
+- Docker is installed and running:
+  ```bash
+  docker --version
+  docker run --rm hello-world
+  ```
+- You can sign in to GitHub.
+- You can sign in to Weights & Biases (W&B).
+- MobaXTerm is installed and can start an SSH session.
 
 ## Additional tips
 ### SSH & Authentication
