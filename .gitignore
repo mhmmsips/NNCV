@@ -172,3 +172,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Downloaded data
+data/
+
+# Slurm files (e.g., slurm-*.out, slurm*.log, slurm_job.sh, etc.)
+slurm*
+
+# Container
+*.sif
