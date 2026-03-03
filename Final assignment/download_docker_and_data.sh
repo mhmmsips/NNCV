@@ -11,5 +11,11 @@ apptainer pull container.sif docker://cclaess/5lsm0:v1
 
 # Use the huggingface-cli package inside the container to download the data
 mkdir -p data
+# apptainer exec container.sif \
+#     huggingface-cli download TimJaspersTue/5LSM0 --local-dir ./data --repo-type dataset
+
 apptainer exec container.sif \
-    huggingface-cli download TimJaspersTue/5LSM0 --local-dir ./data --repo-type dataset
+  huggingface-cli download TimJaspersTue/5LSM0 \
+  --repo-type dataset \
+  --local-dir ./data \
+  --resume-download \
