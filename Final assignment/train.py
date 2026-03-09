@@ -211,15 +211,18 @@ def main(args):
     # Define the transforms to apply to the data
     img_transform = Compose([
     ToImage(),
-    Resize((256, 256)),
+    # Resize((256, 256)),
+    Resize((252, 252)) #ENSURE DIVISIBILITY BY PATCH SIZE
     ToDtype(torch.float32, scale=True),
-    Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    # Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
     ])
 
     # Target transform (mask)
     target_transform = Compose([
         ToImage(),
-        Resize((256, 256), interpolation=InterpolationMode.NEAREST),
+        # Resize((256, 256), interpolation=InterpolationMode.NEAREST),
+        Resize((252, 252), interpolation=InterpolationMode.NEAREST), #ENSURE DIVISIBILITY BY PATCH SIZE
         ToDtype(torch.int64),  # no scaling
     ])
 
@@ -260,12 +263,17 @@ def main(args):
         in_channels=3,  # RGB images
         n_classes=19,  # 19 classes in the Cityscapes dataset
     ).to(device)
+    
+    # Freeze the backbone parameters to prevent them from being updated during training, since we are using a pretrained DINOv2 model as the backbone and only want to train the decoder
+    for p in model.backbone.parameters():
+        p.requires_grad = False
 
     # Define the loss function
     criterion = nn.CrossEntropyLoss(ignore_index=255)  # Ignore the void class
 
     # Define the optimizer
-    optimizer = AdamW(model.parameters(), lr=args.lr)
+    # optimizer = AdamW(model.parameters(), lr=args.lr)
+    optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
 
     # Training loop
     best_valid_loss = float('inf')
