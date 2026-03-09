@@ -40,6 +40,7 @@ def convert_to_train_id(label_img: torch.Tensor) -> torch.Tensor:
     return label_img.apply_(lambda x: id_to_trainid[x])
 
 # Mapping train IDs to color
+#NOTE train_id == 255 is used for the 'void' category, which is ignored during training and evaluation. We assign it a color (black) for visualization purposes.
 train_id_to_color = {cls.train_id: cls.color for cls in Cityscapes.classes if cls.train_id != 255}
 train_id_to_color[255] = (0, 0, 0)  # Assign black to ignored labels
 
@@ -54,6 +55,122 @@ def convert_train_id_to_color(prediction: torch.Tensor) -> torch.Tensor:
             color_image[:, i][mask] = color[i]
 
     return color_image
+
+
+# Submission platform metrics are reported on these Cityscapes super-categories.
+# Mapping found on https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/helpers/labels.py and https://www.cityscapes-dataset.com/dataset-overview/#class-definitions
+category_names = ("Flat",
+                  "Constrution",
+                  "Object", 
+                  "Nature",
+                  "Sky",
+                  "Human",
+                  "Vehicle")
+
+train_id_to_category_index = torch.full((256,), -1, dtype=torch.long)
+train_id_to_category_index[0] = 0 # road
+train_id_to_category_index[1] = 0 # sidewalk
+train_id_to_category_index[2] = 1 # building
+train_id_to_category_index[3] = 1 # wall
+train_id_to_category_index[4] = 1 # fence
+train_id_to_category_index[5] = 2 # pole
+train_id_to_category_index[6] = 2 # traffic light
+train_id_to_category_index[7] = 2 # traffic sign
+train_id_to_category_index[8] = 3 # vegetation
+train_id_to_category_index[9] = 3 # terrain
+train_id_to_category_index[10] = 4 # sky
+train_id_to_category_index[11] = 5 # person
+train_id_to_category_index[12] = 5 # rider
+train_id_to_category_index[13] = 6 # car
+train_id_to_category_index[14] = 6 # truck
+train_id_to_category_index[15] = 6 # bus
+train_id_to_category_index[16] = 6 # train
+train_id_to_category_index[17] = 6 # motorcycle
+train_id_to_category_index[18] = 6 # bicycle
+
+
+def update_category_confusion_matrix(confusion_matrix: torch.Tensor,
+                                     predictions: torch.Tensor,
+                                     labels: torch.Tensor) -> torch.Tensor:
+    """
+    Accumulate a confusion matrix over the 7 submission categories.
+
+    Both `predictions` and `labels` are expected to contain Cityscapes train IDs.
+    They are mapped to the coarse submission categories defined in `train_id_to_category_index`, and only valid labels are counted.
+
+    Args:
+        confusion_matrix: Running `(7, 7)` confusion matrix with rows for ground truth categories and columns for predicted categories.
+        predictions: Predicted segmentation map of shape `(B, H, W)` with train IDs.
+        labels: Ground-truth segmentation map of shape `(B, H, W)` with train IDs.
+
+    Returns:
+        The updated confusion matrix.
+    """
+    
+    # Set the device of the category lookup to match the predictions and labels
+    category_lookup = train_id_to_category_index.to(predictions.device)
+    
+    # Extract the category indices for predictions and labels using the lookup table
+    predicted_categories = category_lookup[predictions]
+    label_categories = category_lookup[labels]
+
+    # Ignore pixels whose ground-truth label does not belong to one of the 7 evaluated submission categories.
+    #NOTE: When choosing "out of distribution", see if this assumption still holds
+    valid_mask = label_categories >= 0
+    predicted_categories = predicted_categories[valid_mask]
+    label_categories = label_categories[valid_mask]
+
+    # Flatten each (ground_truth, prediction) pair into a single index, where `bincount` can accumulate the full confusion matrix efficiently.
+    confusion_matrix += torch.bincount(label_categories * len(category_names) + predicted_categories,
+                                       minlength=len(category_names) ** 2).reshape(len(category_names), len(category_names))
+    
+    # Return the CM
+    return confusion_matrix
+
+
+def compute_category_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]:
+    """
+    Compute dataset-level Dice and IoU scores from a confusion matrix.
+
+    The confusion matrix is assumed to contain counts over the 7 submission categories. 
+    True positives, false positives, and false negatives are derived from it to produce the mean metrics and the per-category metrics logged to W&B.
+
+    Args:
+        confusion_matrix: `(7, 7)` confusion matrix with rows as ground truth and columns as predictions.
+
+    Returns:
+        A dictionary containing `MeanDice`, `MeanIoU`, and all per-category `Dice*` and `IoU*` metrics.
+    """
+    # Convert the confusion matrix to float for metric calculations
+    confusion_matrix = confusion_matrix.float()
+
+    # Derive TP, FP, and FN from the confusion matrix
+    true_positive = confusion_matrix.diag()
+    false_positive = confusion_matrix.sum(dim=0) - true_positive
+    false_negative = confusion_matrix.sum(dim=1) - true_positive
+
+    # Calculate the DICE and IoU
+    dice_denominator = 2 * true_positive + false_positive + false_negative
+    dice_scores = torch.zeros_like(true_positive)
+    valid_dice = dice_denominator > 0 # Ensure we only compute DICE for categories that are present in the ground truth or predictions
+    dice_scores[valid_dice] = (2 * true_positive[valid_dice]) / dice_denominator[valid_dice]
+    
+    iou_denominator = true_positive + false_positive + false_negative
+    iou_scores = torch.zeros_like(true_positive)
+    valid_iou = iou_denominator > 0
+    iou_scores[valid_iou] = true_positive[valid_iou] / iou_denominator[valid_iou]
+    
+    # Log the mean DICE and IoU over all categories
+    metrics = {"MeanDice": dice_scores[valid_dice].mean().item() if valid_dice.any() else 0.0,
+               "MeanIoU": iou_scores[valid_iou].mean().item() if valid_iou.any() else 0.0,}
+
+    # Log per-category metrics, using the category names defined in `category_names`
+    for index, category_name in enumerate(category_names):
+        metrics[f"Dice{category_name}"] = dice_scores[index].item()
+        metrics[f"IoU{category_name}"] = iou_scores[index].item()
+
+    # Return the metrics dictionary, which will be logged to W&B in the training loop
+    return metrics
 
 
 def get_args_parser():
@@ -180,7 +297,11 @@ def main(args):
         # Validation
         model.eval()
         with torch.no_grad():
+            # Initialize losses list and confusion matrix for the validation set
             losses = []
+            category_confusion_matrix = torch.zeros((len(category_names), len(category_names)),
+                                                    dtype=torch.int64, device=device)
+            
             for i, (images, labels) in enumerate(valid_dataloader):
 
                 labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
@@ -191,10 +312,14 @@ def main(args):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
                 losses.append(loss.item())
+
+                # Convert the predicted segmentation maps to category predictions and update the confusion matrix
+                predictions = outputs.softmax(1).argmax(1)
+                category_confusion_matrix = update_category_confusion_matrix(category_confusion_matrix,
+                                                                             predictions,
+                                                                             labels)
             
                 if i == 0:
-                    predictions = outputs.softmax(1).argmax(1)
-
                     predictions = predictions.unsqueeze(1)
                     labels = labels.unsqueeze(1)
 
@@ -213,9 +338,11 @@ def main(args):
                     }, step=(epoch + 1) * len(train_dataloader) - 1)
             
             valid_loss = sum(losses) / len(losses)
-            wandb.log({
-                "valid_loss": valid_loss
-            }, step=(epoch + 1) * len(train_dataloader) - 1)
+            
+            # Compute the metrics from the confusion matrix and log them to W&B, along with the validation loss
+            validation_metrics = compute_category_metrics(category_confusion_matrix)
+            validation_metrics["valid_loss"] = valid_loss
+            wandb.log(validation_metrics, step=(epoch + 1) * len(train_dataloader) - 1)
 
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
