@@ -7,4 +7,4 @@ python3 train.py \
     --lr 0.001 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "DINOv2-training" \
+    --experiment-id "U-Net_bs64_25epochs_lr001" \
