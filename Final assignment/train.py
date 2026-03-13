@@ -354,16 +354,16 @@ def main(args):
         n_classes=19,  # 19 classes in the Cityscapes dataset
     ).to(device)
     
-    # Freeze the backbone parameters to prevent them from being updated during training, since we are using a pretrained DINOv2 model as the backbone and only want to train the decoder
-    for p in model.backbone.parameters():
-        p.requires_grad = False
+    # # Freeze the backbone parameters to prevent them from being updated during training, since we are using a pretrained DINOv2 model as the backbone and only want to train the decoder
+    # for p in model.backbone.parameters():
+    #     p.requires_grad = False
 
     # Define the loss function
     criterion = nn.CrossEntropyLoss(ignore_index=255)  # Ignore the void class
 
     # Define the optimizer
-    # optimizer = AdamW(model.parameters(), lr=args.lr)
-    optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
+    optimizer = AdamW(model.parameters(), lr=args.lr)
+    # optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
 
     # Training loop
     best_valid_loss = float('inf')
