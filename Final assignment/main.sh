@@ -2,9 +2,9 @@ wandb login
 
 python3 train.py \
     --data-dir ./data/cityscapes \
-    --batch-size 64 \
-    --epochs 25 \
-    --lr 0.001 \
+    --batch-size 16 \
+    --epochs 30 \
+    --lr 0.1 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "U-Net_bs64_25epochs_lr001" \
+    --experiment-id "UNet_bs16_30epochs_lr01_SGD_momentum09_wd1e-3_labelsmoothing01_CosineAnnealing_dataaugmentation_focalloss" \
