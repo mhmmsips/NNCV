@@ -97,7 +97,7 @@ def update_category_confusion_matrix(confusion_matrix: torch.Tensor,
     Accumulate a confusion matrix over the 7 submission categories.
 
     Both `predictions` and `labels` are expected to contain Cityscapes train IDs.
-    They are mapped to the coarse submission categories defined in `train_id_to_category_index`, and only valid labels are counted.
+    They are mapped to the categories defined in `train_id_to_category_index`, and only valid labels are counted.
 
     Args:
         confusion_matrix: Running `(7, 7)` confusion matrix with rows for ground truth categories and columns for predicted categories.
