@@ -130,64 +130,189 @@ class OutConv(nn.Module):
 
 
 
-# class Model(nn.Module):
-#     def __init__(self, in_channels=3, n_classes=19, model_name="facebook/dinov2-small"):
-#         super().__init__()
+class ModelDinoMLPDecoder(nn.Module):
+    def __init__(self, in_channels=3, n_classes=19, model_name="facebook/dinov2-small"):
+        super().__init__()
 
-#         if in_channels != 3:
-#             raise ValueError("DINOv2 expects 3-channel RGB input.")
+        if in_channels != 3:
+            raise ValueError("DINOv2 expects 3-channel RGB input.")
 
-#         self.in_channels = in_channels
-#         self.n_classes = n_classes
+        self.in_channels = in_channels
+        self.n_classes = n_classes
 
-#         # Pretrained DINOv2 backbone
-#         self.backbone = AutoModel.from_pretrained(model_name)
+        # Pretrained DINOv2 backbone
+        self.backbone = AutoModel.from_pretrained(model_name)
 
-#         hidden_size = self.backbone.config.hidden_size
-#         self.patch_size = self.backbone.config.patch_size
+        hidden_size = self.backbone.config.hidden_size
+        self.patch_size = self.backbone.config.patch_size
 
-#         # Simple segmentation decoder
-#         self.decoder = nn.Sequential(
-#             nn.Conv2d(hidden_size, 512, kernel_size=3, padding=1),
-#             nn.BatchNorm2d(512),
-#             nn.ReLU(inplace=True),
+        # Simple segmentation decoder
+        self.decoder = nn.Sequential(
+            nn.Conv2d(hidden_size, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
 
-#             nn.Conv2d(512, 256, kernel_size=3, padding=1),
-#             nn.BatchNorm2d(256),
-#             nn.ReLU(inplace=True),
+            nn.Conv2d(512, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
 
-#             nn.Conv2d(256, n_classes, kernel_size=1)
-#         )
+            nn.Conv2d(256, n_classes, kernel_size=1)
+        )
 
-#     def forward(self, x):
-#         if x.shape[1] != self.in_channels:
-#             raise ValueError(f"Expected {self.in_channels} input channels, but got {x.shape[1]}")
+    def forward(self, x):
+        if x.shape[1] != self.in_channels:
+            raise ValueError(f"Expected {self.in_channels} input channels, but got {x.shape[1]}")
 
-#         H_img, W_img = x.shape[-2:]
+        H_img, W_img = x.shape[-2:]
 
-#         outputs = self.backbone(pixel_values=x)
-#         tokens = outputs.last_hidden_state  # [B, 1 + N, C]
+        outputs = self.backbone(pixel_values=x)
+        tokens = outputs.last_hidden_state  # [B, 1 + N, C]
 
-#         # Drop CLS token
-#         patch_tokens = tokens[:, 1:, :]     # [B, N, C]
+        # Drop CLS token
+        patch_tokens = tokens[:, 1:, :]     # [B, N, C]
 
-#         B, N, C = patch_tokens.shape
-#         grid_size = int(N ** 0.5)
+        B, N, C = patch_tokens.shape
+        grid_size = int(N ** 0.5)
 
-#         if grid_size * grid_size != N:
-#             raise ValueError(f"Number of patches ({N}) is not a perfect square.")
+        if grid_size * grid_size != N:
+            raise ValueError(f"Number of patches ({N}) is not a perfect square.")
 
-#         # Reshape sequence of patches to 2D feature map
-#         feats = patch_tokens.permute(0, 2, 1).contiguous().view(B, C, grid_size, grid_size)
+        # Reshape sequence of patches to 2D feature map
+        feats = patch_tokens.permute(0, 2, 1).contiguous().view(B, C, grid_size, grid_size)
 
-#         logits = self.decoder(feats)
+        logits = self.decoder(feats)
 
-#         # Upsample to original image resolution
-#         logits = nn.functional.interpolate(
-#             logits,
-#             size=(H_img, W_img),
-#             mode="bilinear",
-#             align_corners=False
-#         )
+        # Upsample to original image resolution
+        logits = nn.functional.interpolate(
+            logits,
+            size=(H_img, W_img),
+            mode="bilinear",
+            align_corners=False
+        )
 
-#         return logits
+        return logits
+    
+    
+class ModelDinoUNetDecoder(nn.Module):
+    def __init__(self, in_channels=3, n_classes=19, model_name="facebook/dinov2-small"):
+        super().__init__()
+
+        if in_channels != 3:
+            raise ValueError("DINOv2 expects 3-channel RGB input.")
+
+        self.in_channels = in_channels
+        self.n_classes = n_classes
+
+        # Pretrained DINOv2 backbone
+        self.backbone = AutoModel.from_pretrained(model_name)
+
+        hidden_size = self.backbone.config.hidden_size
+        self.patch_size = self.backbone.config.patch_size
+
+        # Simple segmentation decoder
+        self.decoder = nn.Sequential(
+            nn.Conv2d(hidden_size, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(512, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(256, n_classes, kernel_size=1)
+        )
+
+    def forward(self, x):
+        if x.shape[1] != self.in_channels:
+            raise ValueError(f"Expected {self.in_channels} input channels, but got {x.shape[1]}")
+
+        H_img, W_img = x.shape[-2:]
+
+        outputs = self.backbone(pixel_values=x)
+        tokens = outputs.last_hidden_state  # [B, 1 + N, C]
+
+        # Drop CLS token
+        patch_tokens = tokens[:, 1:, :]     # [B, N, C]
+
+        B, N, C = patch_tokens.shape
+        grid_size = int(N ** 0.5)
+
+        if grid_size * grid_size != N:
+            raise ValueError(f"Number of patches ({N}) is not a perfect square.")
+
+        # Reshape sequence of patches to 2D feature map
+        feats = patch_tokens.permute(0, 2, 1).contiguous().view(B, C, grid_size, grid_size)
+
+        logits = self.decoder(feats)
+
+        # Upsample to original image resolution
+        logits = nn.functional.interpolate(
+            logits,
+            size=(H_img, W_img),
+            mode="bilinear",
+            align_corners=False
+        )
+
+        return logits
+    
+class ModelDinoMask2FormerDecoder(nn.Module):
+    def __init__(self, in_channels=3, n_classes=19, model_name="facebook/dinov2-small"):
+        super().__init__()
+
+        if in_channels != 3:
+            raise ValueError("DINOv2 expects 3-channel RGB input.")
+
+        self.in_channels = in_channels
+        self.n_classes = n_classes
+
+        # Pretrained DINOv2 backbone
+        self.backbone = AutoModel.from_pretrained(model_name)
+
+        hidden_size = self.backbone.config.hidden_size
+        self.patch_size = self.backbone.config.patch_size
+
+        # Simple segmentation decoder
+        self.decoder = nn.Sequential(
+            nn.Conv2d(hidden_size, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(512, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(256, n_classes, kernel_size=1)
+        )
+
+    def forward(self, x):
+        if x.shape[1] != self.in_channels:
+            raise ValueError(f"Expected {self.in_channels} input channels, but got {x.shape[1]}")
+
+        H_img, W_img = x.shape[-2:]
+
+        outputs = self.backbone(pixel_values=x)
+        tokens = outputs.last_hidden_state  # [B, 1 + N, C]
+
+        # Drop CLS token
+        patch_tokens = tokens[:, 1:, :]     # [B, N, C]
+
+        B, N, C = patch_tokens.shape
+        grid_size = int(N ** 0.5)
+
+        if grid_size * grid_size != N:
+            raise ValueError(f"Number of patches ({N}) is not a perfect square.")
+
+        # Reshape sequence of patches to 2D feature map
+        feats = patch_tokens.permute(0, 2, 1).contiguous().view(B, C, grid_size, grid_size)
+
+        logits = self.decoder(feats)
+
+        # Upsample to original image resolution
+        logits = nn.functional.interpolate(
+            logits,
+            size=(H_img, W_img),
+            mode="bilinear",
+            align_corners=False
+        )
+
+        return logits

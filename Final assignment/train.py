@@ -19,7 +19,9 @@ import wandb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import AdamW
+from torch.optim import AdamW, SGD
+import torch.optim as optim
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
 from torchvision.utils import make_grid
@@ -29,7 +31,12 @@ from torchvision.transforms.v2 import (
     Resize,
     ToImage,
     ToDtype,
-    InterpolationMode
+    InterpolationMode,
+    Pad,
+    RandomHorizontalFlip,
+    ColorJitter,
+    GaussianBlur,
+    RandomApply,
 )
 import math
 from model import Model
@@ -263,6 +270,87 @@ def compute_boundary_iou_batch(predictions: torch.Tensor,
     return intersections, unions
 
 
+class AugmentedCityscapes(torch.utils.data.Dataset):
+    def __init__(self, dataset, augment=True):
+        self.dataset = dataset
+        self.augment = augment
+        self.joint_transform = RandomHorizontalFlip(p=0.5)
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img, mask = self.dataset[idx]
+        if self.augment:
+            img, mask = self.joint_transform(img, mask)
+        return img, mask
+    
+    
+    
+class DiceLoss(nn.Module):
+    def __init__(self, ignore_index=255, smooth=1e-6):
+        super().__init__()
+        self.ignore_index = ignore_index
+        self.smooth = smooth
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # logits: (B, C, H, W), targets: (B, H, W)
+        probs = logits.softmax(dim=1)
+        num_classes = logits.shape[1]
+
+        # Mask out ignore index
+        valid_mask = (targets != self.ignore_index).unsqueeze(1)  # (B, 1, H, W)
+
+        # One-hot encode targets, replacing ignore_index with 0
+        targets_clean = targets.clone()
+        targets_clean[targets == self.ignore_index] = 0
+        targets_one_hot = torch.zeros_like(probs)
+        targets_one_hot.scatter_(1, targets_clean.unsqueeze(1), 1)
+
+        # Apply valid mask
+        probs = probs * valid_mask
+        targets_one_hot = targets_one_hot * valid_mask
+
+        # Compute Dice per class
+        dims = (0, 2, 3)
+        intersection = (probs * targets_one_hot).sum(dim=dims)
+        cardinality = (probs + targets_one_hot).sum(dim=dims)
+        dice_per_class = (2 * intersection + self.smooth) / (cardinality + self.smooth)
+
+        return 1 - dice_per_class.mean()
+
+
+class CEDiceLoss(nn.Module):
+    def __init__(self, ignore_index=255, label_smoothing=0.1, dice_weight=0.5):
+        super().__init__()
+        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index, label_smoothing=label_smoothing)
+        self.dice = DiceLoss(ignore_index=ignore_index)
+        self.dice_weight = dice_weight  # weight of Dice loss, CE weight = 1 - dice_weight
+
+    def forward(self, logits, targets):
+        return (1 - self.dice_weight) * self.ce(logits, targets) + self.dice_weight * self.dice(logits, targets)
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, ignore_index=255, gamma=2.0):
+        super().__init__()
+        self.ignore_index = ignore_index
+        self.gamma = gamma  # focusing parameter — paper recommends gamma=2
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # Compute standard CE per pixel (unreduced)
+        ce_loss = F.cross_entropy(logits, targets, ignore_index=self.ignore_index, reduction='none')
+
+        # Compute p_t = exp(-CE) — probability of correct class
+        pt = torch.exp(-ce_loss)
+
+        # Apply focal modulating factor
+        focal_loss = (1 - pt) ** self.gamma * ce_loss
+
+        # Only average over valid pixels
+        valid_mask = targets != self.ignore_index
+        return focal_loss[valid_mask].mean()
+
 def get_args_parser():
 
     parser = ArgumentParser("Training script for a PyTorch U-Net model")
@@ -297,15 +385,25 @@ def main(args):
 
     # Define the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Training transform (with augmentations)
+    train_img_transform = Compose([
+        ToImage(),
+        Resize((518, 518)), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 518x518 images
+        ToDtype(torch.float32, scale=True),
+        ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
+        RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
+        Pad((13, 13, 13, 13), fill=0),
+        Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
+    ])
 
-    # Define the transforms to apply to the data
-    img_transform = Compose([
-    ToImage(),
-    # Resize((256, 256)),
-    Resize((518, 518)) #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 518x518 images
-    ToDtype(torch.float32, scale=True),
-    # Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
+    # Validation transform (NO augmentations)
+    val_img_transform = Compose([
+        ToImage(),
+        Resize((518, 518)), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 518x518 images
+        ToDtype(torch.float32, scale=True),
+        Pad((13, 13, 13, 13), fill=0), # 518 -> 544 #NOTE: Make it Unet friendly by padding to 544.
+        Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
     ])
 
     # Target transform (mask)
@@ -313,27 +411,28 @@ def main(args):
         ToImage(),
         # Resize((256, 256), interpolation=InterpolationMode.NEAREST),
         Resize((518, 518), interpolation=InterpolationMode.NEAREST), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 518x518 images
+        Pad((13, 13, 13, 13), fill=0), # 518 -> 544 #NOTE: Make it Unet friendly by padding to 544.
         ToDtype(torch.int64),  # no scaling
     ])
 
     # Load the dataset and make a split for training and validation
-    train_dataset = Cityscapes(
-    args.data_dir,
-    split="train",
-    mode="fine",
-    target_type="semantic",
-    transform=img_transform,
-    target_transform=target_transform,
-    )
+    train_dataset = Cityscapes(args.data_dir,
+                               split="train",
+                               mode="fine",
+                               target_type="semantic",
+                               transform=train_img_transform,
+                               target_transform=target_transform)
 
-    valid_dataset = Cityscapes(
-        args.data_dir,
-        split="val",
-        mode="fine",
-        target_type="semantic",
-        transform=img_transform,
-        target_transform=target_transform,
-    )
+    valid_dataset = Cityscapes(args.data_dir,
+                               split="val",
+                               mode="fine",
+                               target_type="semantic",
+                               transform=val_img_transform,
+                               target_transform=target_transform)
+
+    # Wrap datasets with augmentation (training only)
+    train_dataset = AugmentedCityscapes(train_dataset, augment=True)
+    valid_dataset = AugmentedCityscapes(valid_dataset, augment=False)
 
     train_dataloader = DataLoader(
         train_dataset, 
@@ -359,11 +458,26 @@ def main(args):
     #     p.requires_grad = False
 
     # Define the loss function
-    criterion = nn.CrossEntropyLoss(ignore_index=255)  # Ignore the void class
+    # Experiment A: CE only (your current baseline)
+    # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
 
-    # Define the optimizer
-    optimizer = AdamW(model.parameters(), lr=args.lr)
-    # optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
+    # Experiment B: CE + Dice
+    # criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
+
+    # Experiment C: Focal loss
+    criterion = FocalLoss(ignore_index=255, gamma=2.0)
+
+    # Define the optimizer (SGD)
+    optimizer = optim.SGD(model.parameters(),
+                          lr=args.lr,
+                          momentum=0.9,
+                          weight_decay=1e-3)
+    
+    # Define the learning rate scheduler (Cosine Annealing)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+
+    # Initialize mixed precision
+    scaler = torch.cuda.amp.GradScaler()
 
     # Training loop
     best_valid_loss = float('inf')
@@ -380,11 +494,23 @@ def main(args):
 
             labels = labels.long().squeeze(1)  # Remove channel dimension
 
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            
+            
+            with torch.cuda.amp.autocast():
+                outputs = model(images)
+                outputs = outputs[:, :, 13:531, 13:531]  # crop back to 518x518
+                labels_cropped = labels[:, 13:531, 13:531]
+                loss = criterion(outputs, labels_cropped)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+
+
+            # loss.backward()
+            # optimizer.step()
 
             wandb.log({
                 "train_loss": loss.item(),
@@ -409,32 +535,38 @@ def main(args):
 
                 labels = labels.long().squeeze(1)  # Remove channel dimension
 
-                outputs = model(images)
-                loss = criterion(outputs, labels)
+                with torch.cuda.amp.autocast():
+                    outputs = model(images)                   # (B, C, 544, 544)
+                    outputs = outputs[:, :, 13:531, 13:531]  # crop back to 518x518
+                    labels_cropped = labels[:, 13:531, 13:531]
+                    loss = criterion(outputs, labels_cropped)
+
                 losses.append(loss.item())
 
-                # Convert the predicted segmentation maps to category predictions and update the confusion matrix
                 predictions = outputs.softmax(1).argmax(1)
-                category_confusion_matrix = update_category_confusion_matrix(category_confusion_matrix,
-                                                                             predictions,
-                                                                             labels)
+                category_confusion_matrix = update_category_confusion_matrix(
+                    category_confusion_matrix,
+                    predictions,
+                    labels_cropped
+                )
+
                 
                 # Compute the boundary intersections and unions for the current batch and accumulate them for the entire validation set
                 batch_boundary_intersections, batch_boundary_unions = compute_boundary_iou_batch(predictions,
-                                                                                                 labels,
+                                                                                                 labels_cropped,
                                                                                                  n_categories=len(category_names))
                 boundary_intersections += batch_boundary_intersections
                 boundary_unions += batch_boundary_unions
             
                 if i == 0:
                     predictions = predictions.unsqueeze(1)
-                    labels = labels.unsqueeze(1)
+                    labels_vis = labels_cropped.unsqueeze(1)
 
                     predictions = convert_train_id_to_color(predictions)
-                    labels = convert_train_id_to_color(labels)
+                    labels_vis = convert_train_id_to_color(labels_vis)
 
                     predictions_img = make_grid(predictions.cpu(), nrow=8)
-                    labels_img = make_grid(labels.cpu(), nrow=8)
+                    labels_img = make_grid(labels_vis.cpu(), nrow=8)
 
                     predictions_img = predictions_img.permute(1, 2, 0).numpy()
                     labels_img = labels_img.permute(1, 2, 0).numpy()
@@ -472,6 +604,9 @@ def main(args):
                     f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pt"
                 )
                 torch.save(model.state_dict(), current_best_model_path)
+            
+            
+            scheduler.step()
         
     print("Training complete!")
 
