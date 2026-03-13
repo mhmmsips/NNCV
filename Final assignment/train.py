@@ -30,7 +30,7 @@ from torchvision.transforms.v2 import (
     ToDtype,
     InterpolationMode
 )
-
+import math
 from model import Model
 
 
@@ -130,7 +130,7 @@ def update_category_confusion_matrix(confusion_matrix: torch.Tensor,
 
 def compute_category_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]:
     """
-    Compute dataset-level Dice and IoU scores from a confusion matrix.
+    Compute dataset-level Dice scores from a confusion matrix.
 
     The confusion matrix is assumed to contain counts over the 7 submission categories. 
     True positives, false positives, and false negatives are derived from it to produce the mean metrics and the per-category metrics logged to W&B.
@@ -139,7 +139,7 @@ def compute_category_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]
         confusion_matrix: `(7, 7)` confusion matrix with rows as ground truth and columns as predictions.
 
     Returns:
-        A dictionary containing `MeanDice`, `MeanIoU`, and all per-category `Dice*` and `IoU*` metrics.
+        A dictionary containing `MeanDice` and all per-category `Dice*` metrics.
     """
     # Convert the confusion matrix to float for metric calculations
     confusion_matrix = confusion_matrix.float()
@@ -149,25 +149,18 @@ def compute_category_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]
     false_positive = confusion_matrix.sum(dim=0) - true_positive
     false_negative = confusion_matrix.sum(dim=1) - true_positive
 
-    # Calculate the DICE and IoU
+    # Calculate the DICE
     dice_denominator = 2 * true_positive + false_positive + false_negative
     dice_scores = torch.zeros_like(true_positive)
     valid_dice = dice_denominator > 0 # Ensure we only compute DICE for categories that are present in the ground truth or predictions
     dice_scores[valid_dice] = (2 * true_positive[valid_dice]) / dice_denominator[valid_dice]
-    
-    iou_denominator = true_positive + false_positive + false_negative
-    iou_scores = torch.zeros_like(true_positive)
-    valid_iou = iou_denominator > 0
-    iou_scores[valid_iou] = true_positive[valid_iou] / iou_denominator[valid_iou]
-    
-    # Log the mean DICE and IoU over all categories
-    metrics = {"MeanDice": dice_scores[valid_dice].mean().item() if valid_dice.any() else 0.0,
-               "MeanIoU": iou_scores[valid_iou].mean().item() if valid_iou.any() else 0.0,}
+
+    # Log the mean DICE over all categories
+    metrics = {"MeanDice": dice_scores[valid_dice].mean().item() if valid_dice.any() else 0.0}
 
     # Log per-category metrics, using the category names defined in `category_names`
     for index, category_name in enumerate(category_names):
         metrics[f"Dice{category_name}"] = dice_scores[index].item()
-        metrics[f"IoU{category_name}"] = iou_scores[index].item()
 
     # Return the metrics dictionary, which will be logged to W&B in the training loop
     return metrics
