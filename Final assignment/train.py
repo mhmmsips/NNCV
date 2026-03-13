@@ -18,6 +18,7 @@ from argparse import ArgumentParser
 import wandb
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
@@ -166,6 +167,102 @@ def compute_category_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]
     return metrics
 
 
+def get_boundary(mask: torch.Tensor, d: int) -> torch.Tensor:
+    """
+    Extract boundary pixels for a binary mask using morphological erosion.
+
+    Args:
+        mask: Binary mask of shape (H, W) or (B, H, W).
+        d: Erosion distance controlling boundary thickness.
+
+    Returns:
+        Boundary mask with the same leading dimensions as `mask`.
+    """
+    # Ensure that the erosion distance is at least 1 to avoid invalid kernel sizes in max pooling
+    d = max(1, int(d))
+
+    # Ensure dimensions are correct for max pooling
+    if mask.ndim == 2:
+        mask = mask.unsqueeze(0)
+
+    # Convert the mask to float and add a channel dimension for max pooling
+    mask = mask.to(dtype=torch.float32)
+    mask = mask.unsqueeze(1)
+
+    # Perform morphological erosion using max pooling and compute the boundary as the difference between the original mask and the eroded version
+    eroded = 1.0 - F.max_pool2d(1.0 - mask,
+                                kernel_size=2 * d + 1,
+                                stride=1,
+                                padding=d)
+    
+    # Compute boundary as the difference between the original mask and the eroded version
+    boundary = (mask - eroded) > 0
+
+    return boundary.squeeze(1)
+
+
+def compute_boundary_iou_batch(predictions: torch.Tensor,
+                               labels: torch.Tensor,
+                               n_categories: int = 7) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute per-category Boundary IoU intersections and unions for a batch.
+
+    Boundary thickness is fixed for the whole batch and set to 0.5% of the
+    image diagonal in pixels.
+
+    Args:
+        predictions: Predicted class map of shape (B, H, W).
+        labels: Ground-truth class map of shape (B, H, W).
+        n_categories: Number of valid categories.
+
+    Returns:
+        Tuple(Tensors): (intersections, unions), each of shape (n_categories,).
+    """
+    # Set to device
+    device = predictions.device
+
+    # Initialize intersections and unions
+    intersections = torch.zeros(n_categories, dtype=torch.float32, device=device)
+    unions = torch.zeros(n_categories, dtype=torch.float32, device=device)
+
+    # Map train IDs to submission categories and keep only valid category labels
+    category_lookup = train_id_to_category_index.to(device)
+    predicted_categories = category_lookup[predictions]
+    label_categories = category_lookup[labels]
+    valid_mask = label_categories >= 0
+
+    # Fixed boundary thickness d = 0.5% of the image diagonal in pixels
+    _, height, width = predictions.shape
+    image_diagonal = math.sqrt(height * height + width * width)
+    d = max(1, int(0.005 * image_diagonal))
+
+    # Loop over all categories
+    for category_index in range(n_categories):
+        # Get the prediction mask and ground-truth mask for the current category
+        pred_mask = predicted_categories == category_index
+        gt_mask = label_categories == category_index
+
+        # Loop over the batch to compute boundary IoU for each image
+        for batch_index in range(predictions.shape[0]):
+            # Get prediction and ground-truth boundaries using morphological erosion
+            pred_boundary = get_boundary(pred_mask[batch_index], d)
+            gt_boundary = get_boundary(gt_mask[batch_index], d)
+
+            # Get the valid pixels for the current batch index as a mask
+            valid_pixels = valid_mask[batch_index]
+            
+            # Apply the valid mask to both boundaries to ensure that we only consider valid pixels in the IoU calculation
+            pred_boundary = pred_boundary & valid_pixels
+            gt_boundary = gt_boundary & valid_pixels
+
+            # Update the intersections and unions for the current category
+            intersections[category_index] += (pred_boundary & gt_boundary).sum()
+            unions[category_index] += (pred_boundary | gt_boundary).sum()
+
+    # Return the total intersections and unions for each class
+    return intersections, unions
+
+
 def get_args_parser():
 
     parser = ArgumentParser("Training script for a PyTorch U-Net model")
@@ -205,7 +302,7 @@ def main(args):
     img_transform = Compose([
     ToImage(),
     # Resize((256, 256)),
-    Resize((252, 252)) #ENSURE DIVISIBILITY BY PATCH SIZE
+    Resize((518, 518)) #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 518x518 images
     ToDtype(torch.float32, scale=True),
     # Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
@@ -215,7 +312,7 @@ def main(args):
     target_transform = Compose([
         ToImage(),
         # Resize((256, 256), interpolation=InterpolationMode.NEAREST),
-        Resize((252, 252), interpolation=InterpolationMode.NEAREST), #ENSURE DIVISIBILITY BY PATCH SIZE
+        Resize((518, 518), interpolation=InterpolationMode.NEAREST), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 518x518 images
         ToDtype(torch.int64),  # no scaling
     ])
 
@@ -302,6 +399,8 @@ def main(args):
             losses = []
             category_confusion_matrix = torch.zeros((len(category_names), len(category_names)),
                                                     dtype=torch.int64, device=device)
+            boundary_intersections = torch.zeros(len(category_names), dtype=torch.float32, device=device)
+            boundary_unions = torch.zeros(len(category_names), dtype=torch.float32, device=device)
             
             for i, (images, labels) in enumerate(valid_dataloader):
 
@@ -319,6 +418,13 @@ def main(args):
                 category_confusion_matrix = update_category_confusion_matrix(category_confusion_matrix,
                                                                              predictions,
                                                                              labels)
+                
+                # Compute the boundary intersections and unions for the current batch and accumulate them for the entire validation set
+                batch_boundary_intersections, batch_boundary_unions = compute_boundary_iou_batch(predictions,
+                                                                                                 labels,
+                                                                                                 n_categories=len(category_names))
+                boundary_intersections += batch_boundary_intersections
+                boundary_unions += batch_boundary_unions
             
                 if i == 0:
                     predictions = predictions.unsqueeze(1)
@@ -342,6 +448,18 @@ def main(args):
             
             # Compute the metrics from the confusion matrix and log them to W&B, along with the validation loss
             validation_metrics = compute_category_metrics(category_confusion_matrix)
+            
+            # Compute the Boundary IoU for each class and log the mean and per-class Boundary IoU to W&B
+            boundary_iou = torch.zeros_like(boundary_intersections)
+            valid_boundary = boundary_unions > 0
+            boundary_iou[valid_boundary] = boundary_intersections[valid_boundary] / boundary_unions[valid_boundary]
+            validation_metrics["MeanBoundaryIoU"] = (boundary_iou[valid_boundary].mean().item() if valid_boundary.any() else 0.0)
+            
+            # Compute the Boundary IoU for each category and log it to W&B using category_names
+            for category_index, category_name in enumerate(category_names):
+                validation_metrics[f"BoundaryIoU{category_name}"] = boundary_iou[category_index].item()
+
+            # Log the validation loss to W&B
             validation_metrics["valid_loss"] = valid_loss
             wandb.log(validation_metrics, step=(epoch + 1) * len(train_dataloader) - 1)
 
