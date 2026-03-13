@@ -13,7 +13,7 @@ class Model(nn.Module):
 
     Adapt this model as needed for your problem-specific requirements. You can make multiple model classes and compare them,
     however, the CodaLab server requires the model class to be named "Model". Also, it will use the default values of the constructor
-    to create the model, so make sure to set the default values of the constructor to the ones you want to use for your submission.
+    to create the model, so make sure to set the default values of the constructor to the ones you want to use for your submission
     """
     def __init__(
         self, 
