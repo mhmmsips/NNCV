@@ -1,157 +1,128 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from transformers import AutoModel
 
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from transformers import AutoModel
 
+class Model(nn.Module):
+    """ 
+    A simple U-Net architecture for image segmentation.
+    Based on the U-Net architecture from the original paper:
+    Olaf Ronneberger et al. (2015), "U-Net: Convolutional Networks for Biomedical Image Segmentation"
+    https://arxiv.org/pdf/1505.04597.pdf
 
-class DinoSegBase(nn.Module):
+    Adapt this model as needed for your problem-specific requirements. You can make multiple model classes and compare them,
+    however, the CodaLab server requires the model class to be named "Model". Also, it will use the default values of the constructor
+    to create the model, so make sure to set the default values of the constructor to the ones you want to use for your submission
     """
-    Base class for all the used DINO-based segmentation models. Handles backbone loading and patch token extraction.
-    Subclasses only need to implement _build_decoder() and forward().
-    """
-    def __init__(self, model_name: str, n_classes: int = 19):
+    def __init__(
+        self, 
+        in_channels=3, 
+        n_classes=19
+    ):
+        """
+        Args:
+            in_channels (int): Number of input channels. Default is 3 for RGB images.
+            n_classes (int): Number of output classes. Default is 19 for the Cityscapes dataset.
+        """
+        
         super().__init__()
-        self.n_classes = n_classes
-        self.backbone = AutoModel.from_pretrained(model_name)
-        self.hidden_size = self.backbone.config.hidden_size
-        self.patch_size = self.backbone.config.patch_size
-        self.decoder = self._build_decoder()
+
+        # Encoding path
+        self.in_channels = in_channels
+        self.inc = DoubleConv(in_channels, 64) #64
+        self.down1 = Down(64, 128) #128
+        self.down2 = Down(128, 256) # 256
+        self.down3 = Down(256, 512) # 512
+        self.down4 = Down(512, 512) # 512
+
+        # # Decoding path
+        self.up1 = Up(1024, 256) # 1024 -> 256
+        self.up2 = Up(512, 128) # 512 -> 128
+        self.up3 = Up(256, 64) # 256 -> 64
+        self.up4 = Up(128, 64) # 128 -> 64
+        self.outc = OutConv(64, n_classes)
+
+    def forward(self, x):
+        """
+        Forward pass through the model.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, in_channels, height, width).
+        """
+        # Check if the input tensor has the expected number of channels
+        if x.shape[1] != self.in_channels:
+            raise ValueError(f"Expected {self.in_channels} input channels, but got {x.shape[1]}")
         
-    def extract_patch_features(self, x: torch.Tensor) -> torch.Tensor:
-        """Extracts 2D spatial feature map from backbone patch tokens."""
-        outputs = self.backbone(pixel_values=x)
-        tokens = outputs.last_hidden_state # (B, 1+N, C)
+        # Encoding path
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+
+        # Decoding path
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        logits = self.outc(x)
+
+        return logits
         
-        n_registers = getattr(self.backbone.config, 'num_register_tokens', 0)
-        patch_tokens = tokens[:, 1 + n_registers:, :]  # drop CLS + register tokens #NOTE: This is needed because in ViT the output tokens contain one extra CLS token
-        
-        B, N, C = patch_tokens.shape # (B, N, C)
-        grid_size = int(N ** 0.5) # Assume square grid of patches
-        
-        # Sanity check: N should be a perfect square for reshaping into (h, w)
-        assert grid_size ** 2 == N, f"Patch count {N} is not a perfect square"
 
-        # (B, N, C) -> (B, C, grid, grid)
-        return patch_tokens.permute(0, 2, 1).contiguous().view(B, C, grid_size, grid_size)
+class DoubleConv(nn.Module):
+    """(convolution => [BN] => ReLU) * 2"""
 
-
-    def _build_decoder(self) -> nn.Module:
-        raise NotImplementedError("Subclasses must implement _build_decoder()")
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("Subclasses must implement forward()")
-
-
-# Decoder 1: DINOv2 styled linear head
-class DinoLinearDecoder(DinoSegBase):
-    """
-    DINO-style linear segmentation head.
-    Equivalent to the DINOv2 BNHead: BatchNorm -> 1x1 Conv.
-    """
-
-    def _build_decoder(self) -> nn.Module:
-        return nn.Sequential(nn.BatchNorm2d(self.hidden_size),
-                             nn.Conv2d(self.hidden_size, self.n_classes, kernel_size=1))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        H, W = x.shape[-2:]
-
-        feats = self.extract_patch_features(x) # (B, C, h, w)
-
-        logits = self.decoder(feats) # (B, n_classes, h, w)
-
-        return F.interpolate(logits,
-                             size=(H, W),
-                             mode="bilinear",
-                             align_corners=False)
-
-# Decoder 2: MLP
-class DinoMLPDecoder(DinoSegBase):
-    """
-    3-layer MLP segmentation head applied per patch token.
-    """
-
-    def _build_decoder(self) -> nn.Module:
-        hidden_dim = 2 * self.hidden_size
-
-        return nn.Sequential(nn.Linear(self.hidden_size, hidden_dim),
-                             nn.GELU(), #NOTE: Transformers (BERT, ViT, DINO, CLIP, etc.) almost always use GELU inside the MLP blocks. DINO backbone was also trained with GELU's everywhere.
-                             nn.Linear(hidden_dim, hidden_dim),
-                             nn.GELU(), #NOTE: Transformers (BERT, ViT, DINO, CLIP, etc.) almost always use GELU inside the MLP blocks. DINO backbone was also trained with GELU's everywhere.
-                             nn.Linear(hidden_dim, self.n_classes))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        H, W = x.shape[-2:]
-        feats = self.extract_patch_features(x) # (B, C, h, w)
-
-        B, C, h, w = feats.shape
-        feats = feats.permute(0, 2, 3, 1).reshape(B, h * w, C)  # (B, N, C)
-
-        logits = self.decoder(feats) # (B, N, n_classes)
-
-        logits = logits.reshape(B, h, w, self.n_classes).permute(0, 3, 1, 2) # (B, n_classes, h, w)
-
-        return F.interpolate(logits, 
-                             size=(H, W),
-                             mode="bilinear",
-                             align_corners=False)
-
-
-
-# Decoder 3: Progressive upsampling conv decoder
-class ConvBlock(nn.Module):
-    """
-    Conv -> BN -> ReLU -> Conv -> BN -> ReLU
-    """
-
-    def __init__(self, in_channels: int, out_channels: int):
+    def __init__(self, in_channels, out_channels, mid_channels=None):
         super().__init__()
-        self.block = nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False), #
-                                   nn.BatchNorm2d(out_channels),
-                                   nn.ReLU(inplace=True),
-                                   nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-                                   nn.BatchNorm2d(out_channels),
-                                   nn.ReLU(inplace=True))
+        if not mid_channels:
+            mid_channels = out_channels
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.block(x)
+    def forward(self, x):
+        return self.double_conv(x)
 
-class DinoUpsamplingDecoder(DinoSegBase):
-    """
-    Progressive upsampling convolutional decoder on top of DINO patch features.
-    Not a true U-Net, because there are no encoder-decoder skip connections; but inspired by the U-Net decoder design with repeated upsampling and conv blocks.
-    """
 
-    def _build_decoder(self) -> nn.Module:
-        return nn.Sequential(nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
-                             ConvBlock(self.hidden_size, 1024),
-                             
-                             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
-                             ConvBlock(1024, 512),
-                             
-                             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
-                             ConvBlock(512, 256),
-                             
-                             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
-                             ConvBlock(256, 128),
-                             
-                             nn.Conv2d(128, self.n_classes, kernel_size=1))
+class Down(nn.Module):
+    """Downscaling with maxpool then double conv"""
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        H, W = x.shape[-2:]
-        feats = self.extract_patch_features(x) # (B, C, h, w)
-        logits = self.decoder(feats)
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.maxpool_conv = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(in_channels, out_channels)
+        )
 
-        return F.interpolate(logits,
-                             size=(H, W),
-                             mode="bilinear",
-                             align_corners=False)
+    def forward(self, x):
+        return self.maxpool_conv(x)
+
+
+class Up(nn.Module):
+    """Upscaling then double conv"""
+
+    def __init__(self, in_channels, out_channels, bilinear=True):
+        super().__init__()
+        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
+        
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        x = torch.cat([x2, x1], dim=1)
+        return self.conv(x)
+
+
+class OutConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(OutConv, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        return self.conv(x)

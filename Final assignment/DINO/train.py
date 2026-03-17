@@ -39,7 +39,6 @@ from torchvision.transforms.v2 import (
     RandomApply,
 )
 import math
-from model import Model
 
 
 # Mapping class IDs to train IDs
@@ -332,25 +331,6 @@ class CEDiceLoss(nn.Module):
     def forward(self, logits, targets):
         return (1 - self.dice_weight) * self.ce(logits, targets) + self.dice_weight * self.dice(logits, targets)
     
-class FocalLoss(nn.Module):
-    def __init__(self, ignore_index=255, gamma=2.0):
-        super().__init__()
-        self.ignore_index = ignore_index
-        self.gamma = gamma #NOTE: A common default value for gamma in focal loss is 2.0
-        
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        # Compute standard CE per pixel (unreduced)
-        ce_loss = F.cross_entropy(logits, targets, ignore_index=self.ignore_index, reduction='none')
-
-        # Compute p_t = exp(-CE) — probability of correct class
-        pt = torch.exp(-ce_loss)
-
-        # Apply focal modulating factor
-        focal_loss = (1 - pt) ** self.gamma * ce_loss
-
-        # Only average over valid pixels
-        valid_mask = targets != self.ignore_index
-        return focal_loss[valid_mask].mean()
 
 
 def get_args_parser():
@@ -363,6 +343,8 @@ def get_args_parser():
     parser.add_argument("--num-workers", type=int, default=10, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
+    parser.add_argument("--backbone", type=str, default="facebook/dinov2-small")
+    parser.add_argument("--decoder", type=str, default="linear")
 
     return parser
 
@@ -391,33 +373,37 @@ def main(args):
     # Training transform (with augmentations)
     train_img_transform = Compose([
         ToImage(),
-        Resize((512, 512)), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 512x512 images
+        Resize((518, 518)),
         ToDtype(torch.float32, scale=True),
         ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
         RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
+        
+        #NOTE: Make it DINO-friendly for all three models as pad size needs to be divisible by patch size, which is either 14 or 16 depending on the model.
+        #NOTE: Least common Multiple of 14 and 16 is 112, so we can pad to the nearest multiple of 112 above 518, which is 560. This ensures that the input size is compatible with all three models without needing model-specific padding.
+        Pad((21, 21, 21, 21), fill=0), # 518 -> 560 
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
     ])
 
     # Validation transform (NO augmentations)
     val_img_transform = Compose([
         ToImage(),
-        Resize((512, 512)), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 512x512 images
+        Resize((518, 518)),
         ToDtype(torch.float32, scale=True),
+        
+        #NOTE: Make it DINO-friendly for all three models as pad size needs to be divisible by patch size, which is either 14 or 16 depending on the model.
+        #NOTE: Least common Multiple of 14 and 16 is 112, so we can pad to the nearest multiple of 112 above 518, which is 560. This ensures that the input size is compatible with all three models without needing model-specific padding.
+        Pad((21, 21, 21, 21), fill=0), # 518 -> 560 
+        
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
     ])
 
-    
-    # Target transform for TRAINING (resize + pad to match model input)
-    train_target_transform = Compose([
+    # Target transform (mask)
+    target_transform = Compose([
         ToImage(),
-        Resize((512, 512), interpolation=InterpolationMode.NEAREST),
-        ToDtype(torch.int64),
-    ])
-
-    # Target transform for VALIDATION (keep original resolution — matches server evaluation)
-    val_target_transform = Compose([
-        ToImage(),
-        ToDtype(torch.int64),
+        # Resize((256, 256), interpolation=InterpolationMode.NEAREST),
+        Resize((518, 518), interpolation=InterpolationMode.NEAREST), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 518x518 images
+        Pad((21, 21, 21, 21), fill=255),
+        ToDtype(torch.int64), # no scaling
     ])
 
     # Load the dataset and make a split for training and validation
@@ -426,14 +412,14 @@ def main(args):
                                mode="fine",
                                target_type="semantic",
                                transform=train_img_transform,
-                               target_transform=train_target_transform)
+                               target_transform=target_transform)
 
     valid_dataset = Cityscapes(args.data_dir,
                                split="val",
                                mode="fine",
                                target_type="semantic",
                                transform=val_img_transform,
-                               target_transform=val_target_transform)
+                               target_transform=target_transform)
 
     # Wrap datasets with augmentation (training only)
     train_dataset = AugmentedCityscapes(train_dataset, augment=True)
@@ -453,20 +439,27 @@ def main(args):
     )
 
     # Define the model
-    model = Model(
-        in_channels=3,  # RGB images
-        n_classes=19,  # 19 classes in the Cityscapes dataset
-    ).to(device)
+    from model import DinoLinearDecoder, DinoMLPDecoder, DinoUpsamplingDecoder
+
+    if args.decoder == "linear":
+        model = DinoLinearDecoder(args.backbone, n_classes=19)
+    elif args.decoder == "mlp":
+        model = DinoMLPDecoder(args.backbone, n_classes=19)
+    elif args.decoder == "upsample":
+        model = DinoUpsamplingDecoder(args.backbone, n_classes=19)
+    else:
+        raise ValueError("Unknown decoder")
+
+    model = model.to(device)
+    
+    # Unfreeze the last two layers of the backbone and the decoder, and keep the rest of the backbone frozen. 
+    for param in model.backbone.parameters():
+        param.requires_grad = False
+    for param in model.backbone.encoder.layer[-4:].parameters():
+        param.requires_grad = True
     
     # Define the loss function
-    # Experiment A: CE only (your current baseline)
-    criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
-
-    # Experiment B: CE + Dice
-    # criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
-
-    # Experiment C: Focal loss
-    # criterion = FocalLoss(ignore_index=255, gamma=2.0)
+    criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void classs
 
     # Define the optimizer (SGD)
     optimizer = optim.SGD(model.parameters(),
@@ -500,7 +493,7 @@ def main(args):
             
             with torch.cuda.amp.autocast():
                 outputs = model(images)
-                loss = criterion(outputs, labels.long().squeeze(1))
+                loss = criterion(outputs, labels)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -524,59 +517,44 @@ def main(args):
             
             for i, (images, labels) in enumerate(valid_dataloader):
 
-                labels = convert_to_train_id(labels)
+                labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
                 images, labels = images.to(device), labels.to(device)
-                labels = labels.long().squeeze(1)   # (B, 1024, 2048) — full original resolution
 
-                # Shrink labels to 512x512 only for loss computation (must match model output size)
-                labels_for_loss = F.interpolate(
-                    labels.unsqueeze(1).float(),
-                    size=(512, 512),
-                    mode='nearest'
-                ).long().squeeze(1)
+                labels = labels.long().squeeze(1)  # Remove channel dimension
 
                 with torch.cuda.amp.autocast():
-                    outputs = model(images)                   # (B, C, 544, 544)
-                    loss = criterion(outputs, labels_for_loss)
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
 
                 losses.append(loss.item())
 
-                # Upsample predictions to original resolution — THIS is what the server evaluates
-                orig_h, orig_w = labels.shape[-2], labels.shape[-1]
-                predictions = F.interpolate(
-                    outputs.softmax(1).argmax(1, keepdim=True).float(),
-                    size=(orig_h, orig_w),
-                    mode='nearest'
-                ).long().squeeze(1)   # (B, 1024, 2048)
-
-                # Now both predictions and labels are at 1024x2048 — matches server exactly
+                predictions = outputs.softmax(1).argmax(1)
                 category_confusion_matrix = update_category_confusion_matrix(
                     category_confusion_matrix,
                     predictions,
                     labels
                 )
 
-                batch_boundary_intersections, batch_boundary_unions = compute_boundary_iou_batch(
-                    predictions,
-                    labels,
-                    n_categories=len(category_names)
-                )
+                
+                # Compute the boundary intersections and unions for the current batch and accumulate them for the entire validation set
+                batch_boundary_intersections, batch_boundary_unions = compute_boundary_iou_batch(predictions,
+                                                                                                 labels,
+                                                                                                 n_categories=len(category_names))
                 boundary_intersections += batch_boundary_intersections
                 boundary_unions += batch_boundary_unions
             
                 if i == 0:
-                    preds_vis = F.interpolate(
-                        predictions.unsqueeze(1).float(), size=(512, 512), mode='nearest'
-                    ).long()
-                    labels_vis = F.interpolate(
-                        labels.unsqueeze(1).float(), size=(512, 512), mode='nearest'
-                    ).long()
+                    predictions = predictions.unsqueeze(1)
+                    labels_vis = labels.unsqueeze(1)
 
-                    preds_vis = convert_train_id_to_color(preds_vis)
+                    predictions = convert_train_id_to_color(predictions)
                     labels_vis = convert_train_id_to_color(labels_vis)
 
-                    predictions_img = make_grid(preds_vis.cpu(), nrow=8).permute(1, 2, 0).numpy()
-                    labels_img = make_grid(labels_vis.cpu(), nrow=8).permute(1, 2, 0).numpy()
+                    predictions_img = make_grid(predictions.cpu(), nrow=8)
+                    labels_img = make_grid(labels_vis.cpu(), nrow=8)
+
+                    predictions_img = predictions_img.permute(1, 2, 0).numpy()
+                    labels_img = labels_img.permute(1, 2, 0).numpy()
 
                     wandb.log({
                         "predictions": [wandb.Image(predictions_img)],

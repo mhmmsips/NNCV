@@ -7,6 +7,6 @@ python3 train.py \
     --lr 0.1 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "BIGGER_and_UNFROZEN_dinov2-small_upsample_TUNED_4BLOCKS" \
-    --backbone "facebook/dinov2-small" \
-    --decoder "upsample"
+    --experiment-id "NEW_Unet_512x512" \
+    # --backbone "facebook/dinov2-small" \
+    # --decoder "upsample"
