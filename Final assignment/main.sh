@@ -7,4 +7,6 @@ python3 train.py \
     --lr 0.1 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "UNet_bs16_30epochs_lr01_SGD_momentum09_wd1e-3_labelsmoothing01_CosineAnnealing_dataaugmentation_focalloss" \
+    --experiment-id "BIGGER_and_UNFROZEN_dinov2-small_upsample_TUNED_4BLOCKS" \
+    --backbone "facebook/dinov2-small" \
+    --decoder "upsample"
