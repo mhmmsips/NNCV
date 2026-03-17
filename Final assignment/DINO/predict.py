@@ -37,8 +37,9 @@ MODEL_PATH = "/app/model.pt"
 def preprocess(img: Image.Image) -> torch.Tensor:
     transform = Compose([
         ToImage(),
-        Resize(size=(512, 512), interpolation=InterpolationMode.BILINEAR),
+        Resize(size=(518, 518), interpolation=InterpolationMode.BILINEAR),
         ToDtype(dtype=torch.float32, scale=True),
+        Pad((13, 13, 13, 13), fill=0),  # 518 -> 544, U-Net friendly
         Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),  # ImageNet normalization
     ])
     
@@ -90,6 +91,7 @@ def main():
 
             # Forward pass
             pred = model(img_tensor)
+            pred = pred[:, :, 13:531, 13:531]  # crop padding back to 518x518
 
             # Postprocess to segmentation mask
             seg_pred = postprocess(pred, original_shape)

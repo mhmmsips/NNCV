@@ -181,3 +181,5 @@ slurm*
 
 # Container
 *.sif
+Final assignment/checkpoints/
+*.pt
