@@ -457,10 +457,10 @@ def main(args):
     
     # Define the loss function
     # Experiment A: CE only (your current baseline)
-    criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
+    # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
 
     # Experiment B: CE + Dice
-    # criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
+    criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
 
     # Experiment C: Focal loss
     # criterion = FocalLoss(ignore_index=255, gamma=2.0)

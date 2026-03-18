@@ -13,12 +13,15 @@ allowing you to easily modify hyperparameters using a command-line argument pars
 Feel free to customize the script as needed for your use case.
 """
 import os
+import random
 from argparse import ArgumentParser
 
 import wandb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from accelerate import Accelerator
+from accelerate.utils import set_seed
 from torch.optim import AdamW, SGD
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
@@ -55,7 +58,7 @@ train_id_to_color[255] = (0, 0, 0)  # Assign black to ignored labels
 
 def convert_train_id_to_color(prediction: torch.Tensor) -> torch.Tensor:
     batch, _, height, width = prediction.shape
-    color_image = torch.zeros((batch, 3, height, width), dtype=torch.uint8)
+    color_image = torch.zeros((batch, 3, height, width), dtype=torch.uint8, device=prediction.device)
 
     for train_id, color in train_id_to_color.items():
         mask = prediction[:, 0] == train_id
@@ -342,7 +345,7 @@ class FocalLoss(nn.Module):
         # Compute standard CE per pixel (unreduced)
         ce_loss = F.cross_entropy(logits, targets, ignore_index=self.ignore_index, reduction='none')
 
-        # Compute p_t = exp(-CE) — probability of correct class
+        # Compute p_t = exp(-CE); probability of correct class
         pt = torch.exp(-ce_loss)
 
         # Apply focal modulating factor
@@ -351,6 +354,17 @@ class FocalLoss(nn.Module):
         # Only average over valid pixels
         valid_mask = targets != self.ignore_index
         return focal_loss[valid_mask].mean()
+
+# Seed worker function to ensure reproducibility in data loading with multiple workers
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2 ** 32
+    random.seed(worker_seed)
+
+    try:
+        import numpy as np
+        np.random.seed(worker_seed)
+    except ImportError:
+        pass
 
 
 def get_args_parser():
@@ -363,30 +377,39 @@ def get_args_parser():
     parser.add_argument("--num-workers", type=int, default=10, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of gradient accumulation steps")
+    parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"], help="Mixed precision mode")
 
     return parser
 
 
 def main(args):
-    # Initialize wandb for logging
-    wandb.init(
-        project="5lsm0-cityscapes-segmentation",  # Project name in wandb
-        name=args.experiment_id,  # Experiment name in wandb
-        config=vars(args),  # Save hyperparameters
-    )
+    # Initialize accelerator for multi-GPU training, mixed precision and gradient accumulation
+    accelerator = Accelerator(device_placement=False,
+                              mixed_precision=args.mixed_precision if torch.cuda.is_available() else "no",
+                              gradient_accumulation_steps=args.gradient_accumulation_steps)
 
     # Create output directory if it doesn't exist
     output_dir = os.path.join("checkpoints", args.experiment_id)
-    os.makedirs(output_dir, exist_ok=True)
+    if accelerator.is_main_process:
+        wandb.init(project="5lsm0-cityscapes-segmentation",  # Project name in wandb
+                   name=args.experiment_id,  # Experiment name in wandb
+                   config=vars(args),  # Save hyperparameters
+                   )
+        
+        os.makedirs(output_dir, exist_ok=True)
+    
+    # Wait for the main process to initialize W&B and create the output directory before other processes proceed    
+    accelerator.wait_for_everyone()
 
     # Set seed for reproducability
-    # If you add other sources of randomness (NumPy, Random), 
-    # make sure to set their seeds as well
-    torch.manual_seed(args.seed)
+    # This includes PyTorch, NumPy and Python's random module
+    set_seed(args.seed)
     torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     # Define the device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = accelerator.device
     
     # Training transform (with augmentations)
     train_img_transform = Compose([
@@ -407,14 +430,14 @@ def main(args):
     ])
 
     
-    # Target transform for TRAINING (resize + pad to match model input)
+    # Target transform for TRAINING (resize (+pad) to match model input)
     train_target_transform = Compose([
         ToImage(),
         Resize((512, 512), interpolation=InterpolationMode.NEAREST),
         ToDtype(torch.int64),
     ])
 
-    # Target transform for VALIDATION (keep original resolution — matches server evaluation)
+    # Target transform for VALIDATION (keep original resolution; matches server evaluation)
     val_target_transform = Compose([
         ToImage(),
         ToDtype(torch.int64),
@@ -439,17 +462,29 @@ def main(args):
     train_dataset = AugmentedCityscapes(train_dataset, augment=True)
     valid_dataset = AugmentedCityscapes(valid_dataset, augment=False)
 
+    # Seed the data loaders as well, so shuffling and worker-side randomness stay reproducible
+    train_generator = torch.Generator()
+    train_generator.manual_seed(args.seed)
+    valid_generator = torch.Generator()
+    valid_generator.manual_seed(args.seed)
+
+    # Define the data loaders with the seeded workers for reproducibility
     train_dataloader = DataLoader(
         train_dataset, 
         batch_size=args.batch_size, 
         shuffle=True,
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        worker_init_fn=seed_worker,
+        generator=train_generator
     )
+    
     valid_dataloader = DataLoader(
         valid_dataset, 
         batch_size=args.batch_size, 
         shuffle=False,
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        worker_init_fn=seed_worker,
+        generator=valid_generator
     )
 
     # Define the model
@@ -477,17 +512,23 @@ def main(args):
     # Define the learning rate scheduler (Cosine Annealing)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
-    # Initialize mixed precision
-    scaler = torch.cuda.amp.GradScaler()
+    # Initialize mixed precision, multi-GPU training and gradient accumulation with accelerator
+    model, optimizer, train_dataloader, valid_dataloader, scheduler = accelerator.prepare(model,
+                                                                                          optimizer,
+                                                                                          train_dataloader,
+                                                                                          valid_dataloader,
+                                                                                          scheduler)
 
     # Training loop
     best_valid_loss = float('inf')
     current_best_model_path = None
     for epoch in range(args.epochs):
-        print(f"Epoch {epoch+1:04}/{args.epochs:04}")
+        # Print epochs in the slurm-*.out job output files, to track training progress from the server console as well
+        accelerator.print(f"Epoch {epoch+1:04}/{args.epochs:04}")
 
         # Training
         model.train()
+        optimizer.zero_grad(set_to_none=True)
         for i, (images, labels) in enumerate(train_dataloader):
 
             labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
@@ -495,30 +536,32 @@ def main(args):
 
             labels = labels.long().squeeze(1)  # Remove channel dimension
 
-            optimizer.zero_grad(set_to_none=True)
-            
-            
-            with torch.cuda.amp.autocast():
-                outputs = model(images)
-                loss = criterion(outputs, labels.long().squeeze(1))
+            # Use accelerator to handle mixed precision and gradient accumulation
+            with accelerator.accumulate(model):
+                with accelerator.autocast():
+                    outputs = model(images)
+                    loss = criterion(outputs, labels.long().squeeze(1))
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+                accelerator.backward(loss)
+                if accelerator.sync_gradients:
+                    optimizer.step()
+                    optimizer.zero_grad(set_to_none=True)
 
-            wandb.log({
-                "train_loss": loss.item(),
-                "learning_rate": optimizer.param_groups[0]['lr'],
-                "epoch": epoch + 1,
-            }, step=epoch * len(train_dataloader) + i)
+            gathered_loss = accelerator.gather(loss.detach().reshape(1)).mean().item() # NOTE: gradient accumulation
+
+            # Log the training metrics
+            if accelerator.is_main_process:
+                wandb.log({"train_loss": gathered_loss,
+                           "learning_rate": optimizer.param_groups[0]['lr'],
+                           "epoch": epoch + 1}, step=epoch * len(train_dataloader) + i)
             
         # Validation
         model.eval()
         with torch.no_grad():
-            # Initialize losses list and confusion matrix for the validation set
-            losses = []
-            category_confusion_matrix = torch.zeros((len(category_names), len(category_names)),
-                                                    dtype=torch.int64, device=device)
+            # Initialize loss sums and confusion matrix for the validation set
+            valid_loss_sum = torch.zeros(1, dtype=torch.float32, device=device)
+            valid_loss_count = torch.zeros(1, dtype=torch.float32, device=device)
+            category_confusion_matrix = torch.zeros((len(category_names), len(category_names)), dtype=torch.int64, device=device)
             boundary_intersections = torch.zeros(len(category_names), dtype=torch.float32, device=device)
             boundary_unions = torch.zeros(len(category_names), dtype=torch.float32, device=device)
             
@@ -526,7 +569,7 @@ def main(args):
 
                 labels = convert_to_train_id(labels)
                 images, labels = images.to(device), labels.to(device)
-                labels = labels.long().squeeze(1)   # (B, 1024, 2048) — full original resolution
+                labels = labels.long().squeeze(1)   # (B, 1024, 2048); full original resolution
 
                 # Shrink labels to 512x512 only for loss computation (must match model output size)
                 labels_for_loss = F.interpolate(
@@ -534,37 +577,34 @@ def main(args):
                     size=(512, 512),
                     mode='nearest'
                 ).long().squeeze(1)
-
-                with torch.cuda.amp.autocast():
-                    outputs = model(images)                   # (B, C, 544, 544)
+            
+                with accelerator.autocast():
+                    outputs = model(images)
                     loss = criterion(outputs, labels_for_loss)
 
-                losses.append(loss.item())
+                valid_loss_sum += loss.detach()
+                valid_loss_count += 1
 
-                # Upsample predictions to original resolution — THIS is what the server evaluates
+                # Upsample predictions to original resolution; THIS is what the submission server evaluates
                 orig_h, orig_w = labels.shape[-2], labels.shape[-1]
-                predictions = F.interpolate(
-                    outputs.softmax(1).argmax(1, keepdim=True).float(),
-                    size=(orig_h, orig_w),
-                    mode='nearest'
-                ).long().squeeze(1)   # (B, 1024, 2048)
+                predictions = F.interpolate(outputs.softmax(1).argmax(1, keepdim=True).float(),
+                                            size=(orig_h, orig_w),
+                                            mode='nearest').long().squeeze(1)   # (B, 1024, 2048)
 
-                # Now both predictions and labels are at 1024x2048 — matches server exactly
-                category_confusion_matrix = update_category_confusion_matrix(
-                    category_confusion_matrix,
-                    predictions,
-                    labels
-                )
+                # Now both predictions and labels are at 1024x2048; matches server exactly
+                category_confusion_matrix = update_category_confusion_matrix(category_confusion_matrix,
+                                                                             predictions,
+                                                                             labels)
 
-                batch_boundary_intersections, batch_boundary_unions = compute_boundary_iou_batch(
-                    predictions,
-                    labels,
-                    n_categories=len(category_names)
-                )
+                batch_boundary_intersections, batch_boundary_unions = compute_boundary_iou_batch(predictions,
+                                                                                                 labels,
+                                                                                                 n_categories=len(category_names))
+                
                 boundary_intersections += batch_boundary_intersections
                 boundary_unions += batch_boundary_unions
-            
-                if i == 0:
+
+                # Log to W&B some validation images
+                if i == 0 and accelerator.is_main_process:
                     preds_vis = F.interpolate(
                         predictions.unsqueeze(1).float(), size=(512, 512), mode='nearest'
                     ).long()
@@ -583,49 +623,57 @@ def main(args):
                         "labels": [wandb.Image(labels_img)],
                     }, step=(epoch + 1) * len(train_dataloader) - 1)
             
-            valid_loss = sum(losses) / len(losses)
-            
-            # Compute the metrics from the confusion matrix and log them to W&B, along with the validation loss
-            validation_metrics = compute_category_metrics(category_confusion_matrix)
-            
-            # Compute the Boundary IoU for each class and log the mean and per-class Boundary IoU to W&B
-            boundary_iou = torch.zeros_like(boundary_intersections)
-            valid_boundary = boundary_unions > 0
-            boundary_iou[valid_boundary] = boundary_intersections[valid_boundary] / boundary_unions[valid_boundary]
-            validation_metrics["MeanBoundaryIoU"] = (boundary_iou[valid_boundary].mean().item() if valid_boundary.any() else 0.0)
-            
-            # Compute the Boundary IoU for each category and log it to W&B using category_names
-            for category_index, category_name in enumerate(category_names):
-                validation_metrics[f"BoundaryIoU{category_name}"] = boundary_iou[category_index].item()
+            # Aggregate the validation loss sums and counts across all processes, and compute the final validation loss for this epoch on the main process
+            valid_loss_sum = accelerator.gather(valid_loss_sum).sum()
+            valid_loss_count = accelerator.gather(valid_loss_count).sum()
+            category_confusion_matrix = accelerator.gather(category_confusion_matrix.unsqueeze(0)).sum(dim=0)
+            boundary_intersections = accelerator.gather(boundary_intersections.unsqueeze(0)).sum(dim=0)
+            boundary_unions = accelerator.gather(boundary_unions.unsqueeze(0)).sum(dim=0)
 
-            # Log the validation loss to W&B
-            validation_metrics["valid_loss"] = valid_loss
-            wandb.log(validation_metrics, step=(epoch + 1) * len(train_dataloader) - 1)
+            # Only the main process should log metrics and save models, to avoid conflicts and redundant logging/saving
+            if accelerator.is_main_process:
+                valid_loss = (valid_loss_sum / valid_loss_count).item()
+                
+                # Compute the metrics from the confusion matrix and log them to W&B, along with the validation loss
+                validation_metrics = compute_category_metrics(category_confusion_matrix)
+                
+                # Compute the Boundary IoU for each class and log the mean and per-class Boundary IoU to W&B
+                boundary_iou = torch.zeros_like(boundary_intersections)
+                valid_boundary = boundary_unions > 0
+                boundary_iou[valid_boundary] = boundary_intersections[valid_boundary] / boundary_unions[valid_boundary]
+                validation_metrics["MeanBoundaryIoU"] = (boundary_iou[valid_boundary].mean().item() if valid_boundary.any() else 0.0)
+                
+                # Compute the Boundary IoU for each category and log it to W&B using category_names
+                for category_index, category_name in enumerate(category_names):
+                    validation_metrics[f"BoundaryIoU{category_name}"] = boundary_iou[category_index].item()
 
-            if valid_loss < best_valid_loss:
-                best_valid_loss = valid_loss
-                if current_best_model_path:
-                    os.remove(current_best_model_path)
-                current_best_model_path = os.path.join(
-                    output_dir, 
-                    f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pt"
-                )
-                torch.save(model.state_dict(), current_best_model_path)
-            
-            
+                # Log the validation loss to W&B
+                validation_metrics["valid_loss"] = valid_loss
+                wandb.log(validation_metrics, step=(epoch + 1) * len(train_dataloader) - 1)
+
+                if valid_loss < best_valid_loss:
+                    best_valid_loss = valid_loss
+                    if current_best_model_path:
+                        os.remove(current_best_model_path)
+                    current_best_model_path = os.path.join(
+                        output_dir, 
+                        f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pt"
+                    )
+                    accelerator.save(
+                        accelerator.unwrap_model(model).state_dict(),
+                        current_best_model_path,
+                    )
+
+            # Step the LR scheduler at the end of the epoch, after validation
             scheduler.step()
         
-    print("Training complete!")
+    accelerator.print("Training complete!")
 
     # Save the model
-    torch.save(
-        model.state_dict(),
-        os.path.join(
-            output_dir,
-            f"final_model-epoch={epoch:04}-val_loss={valid_loss:04}.pt"
-        )
-    )
-    wandb.finish()
+    if accelerator.is_main_process:
+        accelerator.save(accelerator.unwrap_model(model).state_dict(),
+                         os.path.join(output_dir, f"final_model-epoch={epoch:04}-val_loss={best_valid_loss:04}.pt")) # type: ignore
+        wandb.finish()
 
 
 if __name__ == "__main__":
