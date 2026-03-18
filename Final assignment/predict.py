@@ -22,6 +22,7 @@ from torchvision.transforms.v2 import (
     InterpolationMode,
     Pad,
 )
+from torchvision.datasets import Cityscapes
 
 from model import Model
 
@@ -59,6 +60,14 @@ def postprocess(pred: torch.Tensor, original_shape: tuple) -> np.ndarray:
     prediction_numpy = prediction_numpy.squeeze()  # Remove batch and channel dimensions if necessary
 
     return prediction_numpy
+
+def remap_train_ids_to_class_ids(prediction: np.ndarray) -> np.ndarray:
+    trainid_to_id = {cls.train_id: cls.id for cls in Cityscapes.classes}
+    trainid_to_id[255] = 255
+    result = np.zeros_like(prediction)
+    for train_id, class_id in trainid_to_id.items():
+        result[prediction == train_id] = class_id
+    return result
 
 
 def main():
@@ -99,7 +108,8 @@ def main():
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save predicted mask
-            Image.fromarray(seg_pred.astype(np.uint8)).save(out_path)
+            # Image.fromarray(seg_pred.astype(np.uint8)).save(out_path)
+            Image.fromarray(remap_train_ids_to_class_ids(seg_pred).astype(np.uint8)).save(out_path)
 
 
 if __name__ == "__main__":
