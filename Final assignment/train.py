@@ -69,112 +69,117 @@ def convert_train_id_to_color(prediction: torch.Tensor) -> torch.Tensor:
     return color_image
 
 
-# Submission platform metrics are reported on these Cityscapes super-categories.
-# Mapping found on https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/helpers/labels.py and https://www.cityscapes-dataset.com/dataset-overview/#class-definitions
+# Metrics are computed per Cityscapes train class first, then averaged into the
+# seven submission super-categories with an unweighted mean over the member classes.
+class_names = ("Road",
+               "Sidewalk",
+               "Building",
+               "Wall",
+               "Fence",
+               "Pole",
+               "TrafficLight",
+               "TrafficSign",
+               "Vegetation",
+               "Terrain",
+               "Sky",
+               "Person",
+               "Rider",
+               "Car",
+               "Truck",
+               "Bus",
+               "Train",
+               "Motorcycle",
+               "Bicycle")
+
 category_names = ("Flat",
-                  "Constrution",
-                  "Object", 
+                  "Construction",
+                  "Object",
                   "Nature",
                   "Sky",
                   "Human",
                   "Vehicle")
 
-train_id_to_category_index = torch.full((256,), -1, dtype=torch.long)
-train_id_to_category_index[0] = 0 # road
-train_id_to_category_index[1] = 0 # sidewalk
-train_id_to_category_index[2] = 1 # building
-train_id_to_category_index[3] = 1 # wall
-train_id_to_category_index[4] = 1 # fence
-train_id_to_category_index[5] = 2 # pole
-train_id_to_category_index[6] = 2 # traffic light
-train_id_to_category_index[7] = 2 # traffic sign
-train_id_to_category_index[8] = 3 # vegetation
-train_id_to_category_index[9] = 3 # terrain
-train_id_to_category_index[10] = 4 # sky
-train_id_to_category_index[11] = 5 # person
-train_id_to_category_index[12] = 5 # rider
-train_id_to_category_index[13] = 6 # car
-train_id_to_category_index[14] = 6 # truck
-train_id_to_category_index[15] = 6 # bus
-train_id_to_category_index[16] = 6 # train
-train_id_to_category_index[17] = 6 # motorcycle
-train_id_to_category_index[18] = 6 # bicycle
+# Mapping found on https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/helpers/labels.py and https://www.cityscapes-dataset.com/dataset-overview/#class-definitions
+category_to_train_ids = (
+    (0, 1),
+    (2, 3, 4),
+    (5, 6, 7),
+    (8, 9),
+    (10,),
+    (11, 12),
+    (13, 14, 15, 16, 17, 18),
+)
 
 
-def update_category_confusion_matrix(confusion_matrix: torch.Tensor,
-                                     predictions: torch.Tensor,
-                                     labels: torch.Tensor) -> torch.Tensor:
+def update_class_confusion_matrix(confusion_matrix: torch.Tensor,
+                                  predictions: torch.Tensor,
+                                  labels: torch.Tensor) -> torch.Tensor:
     """
-    Accumulate a confusion matrix over the 7 submission categories.
-
-    Both `predictions` and `labels` are expected to contain Cityscapes train IDs.
-    They are mapped to the categories defined in `train_id_to_category_index`, and only valid labels are counted.
+    Accumulate a confusion matrix over the 19 valid Cityscapes train classes.
 
     Args:
-        confusion_matrix: Running `(7, 7)` confusion matrix with rows for ground truth categories and columns for predicted categories.
+        confusion_matrix: Running `(19, 19)` confusion matrix with rows for ground truth classes and columns for predicted classes.
         predictions: Predicted segmentation map of shape `(B, H, W)` with train IDs.
         labels: Ground-truth segmentation map of shape `(B, H, W)` with train IDs.
 
     Returns:
         The updated confusion matrix.
     """
-    
-    # Set the device of the category lookup to match the predictions and labels
-    category_lookup = train_id_to_category_index.to(predictions.device)
-    
-    # Extract the category indices for predictions and labels using the lookup table
-    predicted_categories = category_lookup[predictions]
-    label_categories = category_lookup[labels]
+    valid_mask = labels != 255
+    predictions = predictions[valid_mask]
+    labels = labels[valid_mask]
 
-    # Ignore pixels whose ground-truth label does not belong to one of the 7 evaluated submission categories.
-    #NOTE: When choosing "out of distribution", see if this assumption still holds
-    valid_mask = label_categories >= 0
-    predicted_categories = predicted_categories[valid_mask]
-    label_categories = label_categories[valid_mask]
-
-    # Flatten each (ground_truth, prediction) pair into a single index, where `bincount` can accumulate the full confusion matrix efficiently.
-    confusion_matrix += torch.bincount(label_categories * len(category_names) + predicted_categories,
-                                       minlength=len(category_names) ** 2).reshape(len(category_names), len(category_names))
-    
-    # Return the CM
+    confusion_matrix += torch.bincount(labels * len(class_names) + predictions,
+                                       minlength=len(class_names) ** 2).reshape(len(class_names), len(class_names))
     return confusion_matrix
 
 
-def compute_category_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]:
+def compute_class_dice_scores(confusion_matrix: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Compute dataset-level Dice scores from a confusion matrix.
-
-    The confusion matrix is assumed to contain counts over the 7 submission categories. 
-    True positives, false positives, and false negatives are derived from it to produce the mean metrics and the per-category metrics logged to W&B.
-
-    Args:
-        confusion_matrix: `(7, 7)` confusion matrix with rows as ground truth and columns as predictions.
-
-    Returns:
-        A dictionary containing `MeanDice` and all per-category `Dice*` metrics.
+    Compute per-class Dice scores from a `(19, 19)` confusion matrix.
     """
-    # Convert the confusion matrix to float for metric calculations
     confusion_matrix = confusion_matrix.float()
 
-    # Derive TP, FP, and FN from the confusion matrix
     true_positive = confusion_matrix.diag()
     false_positive = confusion_matrix.sum(dim=0) - true_positive
     false_negative = confusion_matrix.sum(dim=1) - true_positive
 
-    # Calculate the DICE
     dice_denominator = 2 * true_positive + false_positive + false_negative
     dice_scores = torch.zeros_like(true_positive)
-    valid_dice = dice_denominator > 0 # Ensure we only compute DICE for categories that are present in the ground truth or predictions
-    dice_scores[valid_dice] = (2 * true_positive[valid_dice]) / dice_denominator[valid_dice]
+    valid_scores = dice_denominator > 0
+    dice_scores[valid_scores] = (2 * true_positive[valid_scores]) / dice_denominator[valid_scores]
 
-    # Log the mean DICE over all categories
-    metrics = {"MeanDice": dice_scores[valid_dice].mean().item() if valid_dice.any() else 0.0}
+    return dice_scores, valid_scores
 
-    # Log per-category metrics, using the category names defined in `category_names`
-    for index, category_name in enumerate(category_names):
-        metrics[f"Dice{category_name}"] = dice_scores[index].item()
 
-    # Return the metrics dictionary, which will be logged to W&B in the training loop
+def aggregate_class_scores(scores: torch.Tensor,
+                           valid_scores: torch.Tensor,
+                           metric_prefix: str) -> dict[str, float]:
+    """
+    Aggregate per-class scores into the seven super-categories with an unweighted mean.
+    """
+    metrics = {}
+    for category_name, train_ids in zip(category_names, category_to_train_ids):
+        class_indices = torch.tensor(train_ids, device=scores.device)
+        category_valid = valid_scores[class_indices]
+
+        if category_valid.any():
+            metrics[f"{metric_prefix}{category_name}"] = scores[class_indices][category_valid].mean().item()
+        else:
+            metrics[f"{metric_prefix}{category_name}"] = 0.0
+
+    return metrics
+
+
+def compute_dice_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]:
+    """
+    Compute MeanDice over the 19 valid classes and Dice* super-category metrics
+    as unweighted means over the member class Dice scores.
+    """
+    dice_scores, valid_scores = compute_class_dice_scores(confusion_matrix)
+
+    metrics = {"MeanDice": dice_scores[valid_scores].mean().item() if valid_scores.any() else 0.0}
+    metrics.update(aggregate_class_scores(dice_scores, valid_scores, metric_prefix="Dice"))
     return metrics
 
 
@@ -214,9 +219,9 @@ def get_boundary(mask: torch.Tensor, d: int) -> torch.Tensor:
 
 def compute_boundary_iou_batch(predictions: torch.Tensor,
                                labels: torch.Tensor,
-                               n_categories: int = 7) -> tuple[torch.Tensor, torch.Tensor]:
+                               n_classes: int = 19) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Compute per-category Boundary IoU intersections and unions for a batch.
+    Compute per-class Boundary IoU intersections and unions for a batch.
 
     Boundary thickness is fixed for the whole batch and set to 0.5% of the
     image diagonal in pixels.
@@ -224,34 +229,28 @@ def compute_boundary_iou_batch(predictions: torch.Tensor,
     Args:
         predictions: Predicted class map of shape (B, H, W).
         labels: Ground-truth class map of shape (B, H, W).
-        n_categories: Number of valid categories.
+        n_classes: Number of valid train classes.
 
     Returns:
-        Tuple(Tensors): (intersections, unions), each of shape (n_categories,).
+        Tuple(Tensors): (intersections, unions), each of shape (n_classes,).
     """
     # Set to device
     device = predictions.device
 
     # Initialize intersections and unions
-    intersections = torch.zeros(n_categories, dtype=torch.float32, device=device)
-    unions = torch.zeros(n_categories, dtype=torch.float32, device=device)
-
-    # Map train IDs to submission categories and keep only valid category labels
-    category_lookup = train_id_to_category_index.to(device)
-    predicted_categories = category_lookup[predictions]
-    label_categories = category_lookup[labels]
-    valid_mask = label_categories >= 0
+    intersections = torch.zeros(n_classes, dtype=torch.float32, device=device)
+    unions = torch.zeros(n_classes, dtype=torch.float32, device=device)
+    valid_mask = labels != 255
 
     # Fixed boundary thickness d = 0.5% of the image diagonal in pixels
     _, height, width = predictions.shape
     image_diagonal = math.sqrt(height * height + width * width)
     d = max(1, int(0.005 * image_diagonal))
 
-    # Loop over all categories
-    for category_index in range(n_categories):
-        # Get the prediction mask and ground-truth mask for the current category
-        pred_mask = predicted_categories == category_index
-        gt_mask = label_categories == category_index
+    # Loop over all classes
+    for class_index in range(n_classes):
+        pred_mask = predictions == class_index
+        gt_mask = labels == class_index
 
         # Loop over the batch to compute boundary IoU for each image
         for batch_index in range(predictions.shape[0]):
@@ -266,12 +265,25 @@ def compute_boundary_iou_batch(predictions: torch.Tensor,
             pred_boundary = pred_boundary & valid_pixels
             gt_boundary = gt_boundary & valid_pixels
 
-            # Update the intersections and unions for the current category
-            intersections[category_index] += (pred_boundary & gt_boundary).sum()
-            unions[category_index] += (pred_boundary | gt_boundary).sum()
+            intersections[class_index] += (pred_boundary & gt_boundary).sum()
+            unions[class_index] += (pred_boundary | gt_boundary).sum()
 
-    # Return the total intersections and unions for each class
     return intersections, unions
+
+
+def compute_boundary_iou_metrics(intersections: torch.Tensor,
+                                 unions: torch.Tensor) -> dict[str, float]:
+    """
+    Compute MeanBoundaryIoU over the 19 classes and BoundaryIoU* super-category
+    metrics as unweighted means over the member class boundary IoUs.
+    """
+    boundary_iou = torch.zeros_like(intersections)
+    valid_scores = unions > 0
+    boundary_iou[valid_scores] = intersections[valid_scores] / unions[valid_scores]
+
+    metrics = {"MeanBoundaryIoU": boundary_iou[valid_scores].mean().item() if valid_scores.any() else 0.0}
+    metrics.update(aggregate_class_scores(boundary_iou, valid_scores, metric_prefix="BoundaryIoU"))
+    return metrics
 
 
 # Define a class to augment the Cityscapes dataset with random horizontal flips and do the other augmentations
@@ -706,9 +718,9 @@ def main(args):
             valid_loss_sum = torch.zeros(1, dtype=torch.float32, device=device)
             valid_loss_count = torch.zeros(1, dtype=torch.float32, device=device)
             valid_loss_components_sum = None
-            category_confusion_matrix = torch.zeros((len(category_names), len(category_names)), dtype=torch.int64, device=device)
-            boundary_intersections = torch.zeros(len(category_names), dtype=torch.float32, device=device)
-            boundary_unions = torch.zeros(len(category_names), dtype=torch.float32, device=device)
+            class_confusion_matrix = torch.zeros((len(class_names), len(class_names)), dtype=torch.int64, device=device)
+            boundary_intersections = torch.zeros(len(class_names), dtype=torch.float32, device=device)
+            boundary_unions = torch.zeros(len(class_names), dtype=torch.float32, device=device)
             
             for i, (images, labels) in enumerate(valid_dataloader):
 
@@ -744,13 +756,13 @@ def main(args):
                                             mode='nearest').long().squeeze(1)   # (B, 1024, 2048)
 
                 # Now both predictions and labels are at 1024x2048; matches server exactly
-                category_confusion_matrix = update_category_confusion_matrix(category_confusion_matrix,
-                                                                             predictions,
-                                                                             labels)
+                class_confusion_matrix = update_class_confusion_matrix(class_confusion_matrix,
+                                                                       predictions,
+                                                                       labels)
 
                 batch_boundary_intersections, batch_boundary_unions = compute_boundary_iou_batch(predictions,
                                                                                                  labels,
-                                                                                                 n_categories=len(category_names))
+                                                                                                 n_classes=len(class_names))
                 
                 boundary_intersections += batch_boundary_intersections
                 boundary_unions += batch_boundary_unions
@@ -783,7 +795,7 @@ def main(args):
                     name: accelerator.gather(value).sum()
                     for name, value in valid_loss_components_sum.items()
                 }
-            category_confusion_matrix = accelerator.gather(category_confusion_matrix.unsqueeze(0)).sum(dim=0)
+            class_confusion_matrix = accelerator.gather(class_confusion_matrix.unsqueeze(0)).sum(dim=0)
             boundary_intersections = accelerator.gather(boundary_intersections.unsqueeze(0)).sum(dim=0)
             boundary_unions = accelerator.gather(boundary_unions.unsqueeze(0)).sum(dim=0)
 
@@ -792,17 +804,8 @@ def main(args):
                 valid_loss = (valid_loss_sum / valid_loss_count).item()
                 
                 # Compute the metrics from the confusion matrix and log them to W&B, along with the validation loss
-                validation_metrics = compute_category_metrics(category_confusion_matrix)
-                
-                # Compute the Boundary IoU for each class and log the mean and per-class Boundary IoU to W&B
-                boundary_iou = torch.zeros_like(boundary_intersections)
-                valid_boundary = boundary_unions > 0
-                boundary_iou[valid_boundary] = boundary_intersections[valid_boundary] / boundary_unions[valid_boundary]
-                validation_metrics["MeanBoundaryIoU"] = (boundary_iou[valid_boundary].mean().item() if valid_boundary.any() else 0.0)
-                
-                # Compute the Boundary IoU for each category and log it to W&B using category_names
-                for category_index, category_name in enumerate(category_names):
-                    validation_metrics[f"BoundaryIoU{category_name}"] = boundary_iou[category_index].item()
+                validation_metrics = compute_dice_metrics(class_confusion_matrix)
+                validation_metrics.update(compute_boundary_iou_metrics(boundary_intersections, boundary_unions))
 
                 # Log the validation loss to W&B
                 validation_metrics["valid_loss"] = valid_loss
