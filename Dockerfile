@@ -23,5 +23,6 @@ RUN pip3 install numpy pandas openpyxl scikit-image scikit-learn scipy opencv-py
 RUN pip3 install matplotlib seaborn
 RUN pip3 install wandb
 RUN pip3 install transformers diffusers huggingface_hub[cli]
+RUN pip3 install accelerate
 
 WORKDIR /app/script

@@ -334,6 +334,117 @@ class CEDiceLoss(nn.Module):
 
     def forward(self, logits, targets):
         return (1 - self.dice_weight) * self.ce(logits, targets) + self.dice_weight * self.dice(logits, targets)
+
+
+class BoundaryLoss(nn.Module):
+    """
+    Approximate boundary loss built from a signed boundary band around the ground-truth mask.
+    """
+    def __init__(self, ignore_index=255, band_width_ratio=0.005):
+        super().__init__()
+        self.ignore_index = ignore_index
+        self.band_width_ratio = band_width_ratio
+
+    def _get_band_width(self, height: int, width: int) -> int:
+        image_diagonal = math.sqrt(height * height + width * width)
+        return max(1, int(self.band_width_ratio * image_diagonal))
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        probs = logits.softmax(dim=1)
+        num_classes = logits.shape[1]
+        valid_mask = (targets != self.ignore_index).unsqueeze(1)
+
+        targets_clean = targets.clone()
+        targets_clean[targets == self.ignore_index] = 0
+        targets_one_hot = F.one_hot(targets_clean, num_classes=num_classes).permute(0, 3, 1, 2).to(dtype=probs.dtype)
+        targets_one_hot = targets_one_hot * valid_mask.to(dtype=probs.dtype)
+
+        band_width = self._get_band_width(*targets.shape[-2:])
+        dilated = F.max_pool2d(targets_one_hot,
+                               kernel_size=2 * band_width + 1,
+                               stride=1,
+                               padding=band_width)
+        eroded = 1.0 - F.max_pool2d(1.0 - targets_one_hot,
+                                    kernel_size=2 * band_width + 1,
+                                    stride=1,
+                                    padding=band_width)
+
+        outer_band = (dilated - targets_one_hot).clamp_min(0.0) * valid_mask.to(dtype=probs.dtype)
+        inner_band = (targets_one_hot - eroded).clamp_min(0.0) * valid_mask.to(dtype=probs.dtype)
+        # Use a signed band so probabilities are encouraged on the inside boundary and discouraged just outside it.
+        signed_band = outer_band - inner_band
+
+        boundary_weight = signed_band.abs().sum(dim=(2, 3))
+        boundary_score = (probs * signed_band).sum(dim=(2, 3))
+        valid_classes = boundary_weight > 0
+
+        if not valid_classes.any():
+            return logits.new_zeros(())
+
+        normalized_score = torch.zeros_like(boundary_score)
+        normalized_score[valid_classes] = boundary_score[valid_classes] / boundary_weight[valid_classes]
+        return normalized_score[valid_classes].mean()
+
+
+class RebalancedBoundaryLoss(nn.Module):
+    """
+    Regional CE + Dice loss with a boundary loss term inspired by Kervadec et al., “Boundary loss for highly unbalanced segmentation” (arXiv:1812.07032).
+    Alpha is linearly rebalanced from 0.01 to 0.5 across the configured number of epochs so that the regional and boundary terms have equal weight at the final epoch.
+    """
+    def __init__(self,
+                 ce_loss,
+                 dice_loss,
+                 boundary_loss,
+                 ce_weight=1.0,
+                 dice_weight=0.5,
+                 alpha_start=0.01,
+                 alpha_end=0.5,
+                 num_epochs=10):
+        super().__init__()
+        self.ce = ce_loss
+        self.dice = dice_loss
+        self.boundary = boundary_loss
+        self.ce_weight = ce_weight
+        self.dice_weight = dice_weight
+        self.alpha_start = alpha_start
+        self.alpha_end = alpha_end
+        self.num_epochs = num_epochs
+
+    def get_alpha(self, epoch: int) -> float:
+        alpha_min = min(self.alpha_start, self.alpha_end)
+        alpha_max = max(self.alpha_start, self.alpha_end)
+
+        if self.num_epochs > 1:
+            alpha = self.alpha_start + (epoch / (self.num_epochs - 1)) * (self.alpha_end - self.alpha_start)
+        else:
+            alpha = self.alpha_end
+
+        return float(min(max(alpha, alpha_min), alpha_max))
+
+    def forward(self,
+                logits: torch.Tensor,
+                targets: torch.Tensor,
+                epoch: int,
+                return_components: bool = False):
+        ce_loss = self.ce(logits, targets)
+        dice_loss = self.dice(logits, targets)
+        boundary_loss = self.boundary(logits, targets)
+
+        regional_loss = self.ce_weight * ce_loss + self.dice_weight * dice_loss
+        alpha = logits.new_tensor(self.get_alpha(epoch))
+        total_loss = (1.0 - alpha) * regional_loss + alpha * boundary_loss
+
+        if not return_components:
+            return total_loss
+
+        return total_loss, {
+            "total_loss": total_loss.detach(),
+            "ce_loss": ce_loss.detach(),
+            "dice_loss": dice_loss.detach(),
+            "boundary_loss": boundary_loss.detach(),
+            "regional_loss": regional_loss.detach(),
+            "alpha": alpha.detach(),
+        }
     
 class FocalLoss(nn.Module):
     def __init__(self, ignore_index=255, gamma=2.0):
@@ -354,6 +465,14 @@ class FocalLoss(nn.Module):
         # Only average over valid pixels
         valid_mask = targets != self.ignore_index
         return focal_loss[valid_mask].mean()
+
+
+def compute_loss_with_components(criterion, logits: torch.Tensor, targets: torch.Tensor, epoch: int):
+    if isinstance(criterion, RebalancedBoundaryLoss):
+        return criterion(logits, targets, epoch=epoch, return_components=True)
+
+    loss = criterion(logits, targets)
+    return loss, {"total_loss": loss.detach()}
 
 # Seed worker function to ensure reproducibility in data loading with multiple workers
 def seed_worker(worker_id):
@@ -495,13 +614,25 @@ def main(args):
     
     # Define the loss function
     # Experiment A: CE only (your current baseline)
-    criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
+    # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
 
     # Experiment B: CE + Dice
     # criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
 
     # Experiment C: Focal loss
     # criterion = FocalLoss(ignore_index=255, gamma=2.0)
+
+    # Experiment D: rebalanced CE + Dice + boundary loss
+    criterion = RebalancedBoundaryLoss(
+        ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
+        dice_loss=DiceLoss(ignore_index=255),
+        boundary_loss=BoundaryLoss(ignore_index=255),
+        ce_weight=1.0,
+        dice_weight=0.5,
+        alpha_start=0.01,
+        alpha_end=0.5,
+        num_epochs=args.epochs,
+    )
 
     # Define the optimizer (SGD)
     optimizer = optim.SGD(model.parameters(),
@@ -524,7 +655,11 @@ def main(args):
     current_best_model_path = None
     for epoch in range(args.epochs):
         # Print epochs in the slurm-*.out job output files, to track training progress from the server console as well
-        accelerator.print(f"Epoch {epoch+1:04}/{args.epochs:04}")
+        epoch_alpha = criterion.get_alpha(epoch) if isinstance(criterion, RebalancedBoundaryLoss) else None
+        if epoch_alpha is None:
+            accelerator.print(f"Epoch {epoch+1:04}/{args.epochs:04}")
+        else:
+            accelerator.print(f"Epoch {epoch+1:04}/{args.epochs:04} | alpha={epoch_alpha:.4f}")
 
         # Training
         model.train()
@@ -540,7 +675,7 @@ def main(args):
             with accelerator.accumulate(model):
                 with accelerator.autocast():
                     outputs = model(images)
-                    loss = criterion(outputs, labels.long().squeeze(1))
+                    loss, loss_components = compute_loss_with_components(criterion, outputs, labels, epoch)
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
@@ -548,12 +683,21 @@ def main(args):
                     optimizer.zero_grad(set_to_none=True)
 
             gathered_loss = accelerator.gather(loss.detach().reshape(1)).mean().item() # NOTE: gradient accumulation
+            gathered_loss_components = {
+                name: accelerator.gather(value.detach().float().reshape(1)).mean().item()
+                for name, value in loss_components.items()
+            }
 
             # Log the training metrics
             if accelerator.is_main_process:
-                wandb.log({"train_loss": gathered_loss,
-                           "learning_rate": optimizer.param_groups[0]['lr'],
-                           "epoch": epoch + 1}, step=epoch * len(train_dataloader) + i)
+                train_metrics = {
+                    "train_loss": gathered_loss,
+                    "learning_rate": optimizer.param_groups[0]['lr'],
+                    "epoch": epoch + 1,
+                }
+                for name, value in gathered_loss_components.items():
+                    train_metrics[f"train_{name}"] = value
+                wandb.log(train_metrics, step=epoch * len(train_dataloader) + i)
             
         # Validation
         model.eval()
@@ -561,6 +705,7 @@ def main(args):
             # Initialize loss sums and confusion matrix for the validation set
             valid_loss_sum = torch.zeros(1, dtype=torch.float32, device=device)
             valid_loss_count = torch.zeros(1, dtype=torch.float32, device=device)
+            valid_loss_components_sum = None
             category_confusion_matrix = torch.zeros((len(category_names), len(category_names)), dtype=torch.int64, device=device)
             boundary_intersections = torch.zeros(len(category_names), dtype=torch.float32, device=device)
             boundary_unions = torch.zeros(len(category_names), dtype=torch.float32, device=device)
@@ -580,10 +725,17 @@ def main(args):
             
                 with accelerator.autocast():
                     outputs = model(images)
-                    loss = criterion(outputs, labels_for_loss)
+                    loss, loss_components = compute_loss_with_components(criterion, outputs, labels_for_loss, epoch)
 
                 valid_loss_sum += loss.detach()
                 valid_loss_count += 1
+                if valid_loss_components_sum is None:
+                    valid_loss_components_sum = {
+                        name: torch.zeros(1, dtype=torch.float32, device=device)
+                        for name in loss_components
+                    }
+                for name, value in loss_components.items():
+                    valid_loss_components_sum[name] += value.detach().float().reshape(1)
 
                 # Upsample predictions to original resolution; THIS is what the submission server evaluates
                 orig_h, orig_w = labels.shape[-2], labels.shape[-1]
@@ -626,6 +778,11 @@ def main(args):
             # Aggregate the validation loss sums and counts across all processes, and compute the final validation loss for this epoch on the main process
             valid_loss_sum = accelerator.gather(valid_loss_sum).sum()
             valid_loss_count = accelerator.gather(valid_loss_count).sum()
+            if valid_loss_components_sum is not None:
+                valid_loss_components_sum = {
+                    name: accelerator.gather(value).sum()
+                    for name, value in valid_loss_components_sum.items()
+                }
             category_confusion_matrix = accelerator.gather(category_confusion_matrix.unsqueeze(0)).sum(dim=0)
             boundary_intersections = accelerator.gather(boundary_intersections.unsqueeze(0)).sum(dim=0)
             boundary_unions = accelerator.gather(boundary_unions.unsqueeze(0)).sum(dim=0)
@@ -649,6 +806,11 @@ def main(args):
 
                 # Log the validation loss to W&B
                 validation_metrics["valid_loss"] = valid_loss
+                if isinstance(criterion, RebalancedBoundaryLoss):
+                    validation_metrics["alpha"] = criterion.get_alpha(epoch)
+                if valid_loss_components_sum is not None:
+                    for name, value in valid_loss_components_sum.items():
+                        validation_metrics[f"valid_{name}"] = (value / valid_loss_count).item()
                 wandb.log(validation_metrics, step=(epoch + 1) * len(train_dataloader) - 1)
 
                 if valid_loss < best_valid_loss:
