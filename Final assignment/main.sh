@@ -14,7 +14,7 @@ python3 -m accelerate.commands.launch \
     --lr 0.01 \
     --num-workers 10 \
     --seed 42 \
-    --gradient-accumulation-steps 4 \ 
+    --gradient-accumulation-steps 4 \
     --mixed-precision "fp16" \
     --experiment-id "Accelerate_Unet_512x512"
     # --backbone "facebook/dinov2-small"
