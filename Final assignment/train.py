@@ -742,14 +742,18 @@ def main(args):
     # Experiment E: Focal loss
     # criterion = FocalLoss(ignore_index=255, gamma=2.0)
     
-    # Define the optimizer (SGD)
+    # Define the optimizer (SGD) with momentum and weight decay and a polynomial learning rate scheduler.
+    #NOTE: "On the Effect of Image Resolution on Semantic Segmentation" by Singh et al. (2024) use polynomial decay and sgd with momentum https://arxiv.org/pdf/2402.05398 
+    #NOTE: Same for "A Study of RobustNet, a Domain Generalization Method for Semantic Segmentation" by Bou (2022)
+    #NOTE: They do not note weight decay, but uses it to improve generalization and combat overfitting.
     optimizer = optim.SGD(model.parameters(),
                           lr=args.lr,
                           momentum=0.9,
                           weight_decay=1e-3)
     
-    # Define the learning rate scheduler (Cosine Annealing)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    scheduler = optim.lr_scheduler.PolynomialLR(optimizer,
+                                               total_iters=args.epochs * len(train_dataloader) // args.gradient_accumulation_steps,
+                                               power=0.9)
 
     # Initialize mixed precision, multi-GPU training and gradient accumulation with accelerator
     model, optimizer, train_dataloader, valid_dataloader, scheduler = accelerator.prepare(model,
