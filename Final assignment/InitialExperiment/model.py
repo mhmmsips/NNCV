@@ -30,18 +30,18 @@ class Model(nn.Module):
 
         # Encoding path
         self.in_channels = in_channels
-        self.inc = DoubleConv(in_channels, 96)
-        self.down1 = Down(96, 192)
-        self.down2 = Down(192, 384)
-        self.down3 = Down(384, 768)
-        self.down4 = Down(768, 768)
+        self.inc = DoubleConv(in_channels, 64) #64
+        self.down1 = Down(64, 128) #128
+        self.down2 = Down(128, 256) # 256
+        self.down3 = Down(256, 512) # 512
+        self.down4 = Down(512, 512) # 512
 
         # # Decoding path
-        self.up1 = Up(1536, 384)
-        self.up2 = Up(768, 192)
-        self.up3 = Up(384, 96)
-        self.up4 = Up(192, 96)
-        self.outc = OutConv(96, n_classes)
+        self.up1 = Up(1024, 256) # 1024 -> 256
+        self.up2 = Up(512, 128) # 512 -> 128
+        self.up3 = Up(256, 64) # 256 -> 64
+        self.up4 = Up(128, 64) # 128 -> 64
+        self.outc = OutConv(64, n_classes)
 
     def forward(self, x):
         """
