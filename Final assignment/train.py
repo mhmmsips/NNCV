@@ -107,6 +107,10 @@ category_to_train_ids = (
     (13, 14, 15, 16, 17, 18),
 )
 
+# Define the safety-critical classes to receive higher weights in the safety-critical boundary loss
+# 6 = traffic light, 7 = traffic sign, 11 = person, 12 = rider, 17 = motorcycle, 18 = bicycle
+safety_critical_class_identifiers = (6, 7, 11, 12, 17, 18)
+
 
 def update_class_confusion_matrix(confusion_matrix: torch.Tensor,
                                   predictions: torch.Tensor,
@@ -271,15 +275,24 @@ def compute_boundary_iou_batch(predictions: torch.Tensor,
 def compute_boundary_iou_metrics(intersections: torch.Tensor,
                                  unions: torch.Tensor) -> dict[str, float]:
     """
-    Compute MeanBoundaryIoU over the 19 classes and BoundaryIoU* super-category
-    metrics as unweighted means over the member class boundary IoUs.
+    Compute MeanBoundaryIoU over the 19 classes, plus safety-critical boundary
+    IoU metrics for the classes emphasized by the safety-critical loss.
     """
+    # Compute Boundary IoU per class, handling cases where the union is zero to avoid division by zero errors.
     boundary_iou = torch.zeros_like(intersections)
     valid_scores = unions > 0
     boundary_iou[valid_scores] = intersections[valid_scores] / unions[valid_scores]
 
+    # Get the MeanBoundaryIoU over the 19 valid classes, and then compute the MeanSafetyCriticalBoundaryIoU as the mean over the safety-critical classes, 
     metrics = {"MeanBoundaryIoU": boundary_iou[valid_scores].mean().item() if valid_scores.any() else 0.0}
-    metrics.update(aggregate_class_scores(boundary_iou, valid_scores, metric_prefix="BoundaryIoU"))
+    safety_indices = torch.tensor(safety_critical_class_identifiers, device=boundary_iou.device)
+    valid_safety_scores = valid_scores[safety_indices]
+    metrics["MeanSafetyCriticalBoundaryIoU"] = (boundary_iou[safety_indices][valid_safety_scores].mean().item() if valid_safety_scores.any() else 0.0)
+
+    # Also include the individual Boundary IoU scores for each safety-critical class for more detailed analysis of how the model is performing on those classes specifically
+    for class_index in safety_critical_class_identifiers:
+        metrics[f"BoundaryIoU{class_names[class_index]}"] = boundary_iou[class_index].item()
+
     return metrics
 
 
@@ -506,9 +519,8 @@ class SafetyCriticalRebalancedBoundaryLoss(RebalancedBoundaryLoss):
     #NOTE: The weights applied have been set to 2.0 (double) for safety-critical classes, but no sensitivity analysis has been done to find the optimal values. It would be interesting to experiment with different weights and see how they affect the performance on safety-critical classes and overall metrics.
     """
     
-    # Define the safety-critical classes to receive higher weights
-    # 6 = traffic light, 7 = traffic sign, 11 = person, 12 = rider, 17 = motorcycle, 18 = bicycle
-    safety_critical_class_ids = (6, 7, 11, 12, 17, 18)
+    # Set to variable in the scope of the class
+    safety_critical_class_ids = safety_critical_class_identifiers
 
     def __init__(self,
                  ce_loss,

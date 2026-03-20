@@ -10,7 +10,7 @@ python3 -m accelerate.commands.launch \
     train.py \
     --data-dir ./data/cityscapes \
     --batch-size 16 \
-    --epochs 30 \
+    --epochs 50 \
     --lr 0.01 \
     --num-workers 10 \
     --seed 42 \
