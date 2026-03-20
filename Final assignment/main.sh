@@ -11,7 +11,7 @@ python3 -m accelerate.commands.launch \
     --data-dir ./data/cityscapes \
     --batch-size 16 \
     --epochs 30 \
-    --lr 0.1 \
+    --lr 0.01 \
     --num-workers 10 \
     --seed 42 \
     --gradient-accumulation-steps 1 \
