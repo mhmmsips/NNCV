@@ -316,7 +316,7 @@ class DiceLoss(nn.Module):
         num_classes = logits.shape[1]
 
         # Mask out ignore index
-        valid_mask = (targets != self.ignore_index).unsqueeze(1) # (B, 1, H, W)
+        valid_mask = (targets != self.ignore_index).unsqueeze(1)
 
         # One-hot encode targets, replacing ignore_index with 0
         targets_clean = targets.clone()
@@ -351,41 +351,61 @@ class CEDiceLoss(nn.Module):
 class BoundaryLoss(nn.Module):
     """
     Approximate boundary loss built from a signed boundary band around the ground-truth mask.
+    
+    band_width_ratio controls the width of the band as a percentage of the image diagonal, so it adapts to different image resolutions.
+    Set to 0.5% for Cityscapes, according to the paper "Boundary IoU: Improving Object-Centric Image Segmentation Evaluation" (arXiv:2205.12681)
     """
-    def __init__(self, ignore_index=255, band_width_ratio=0.005):
+    def __init__(self, ignore_index=255, band_width_ratio=0.005, class_weights: torch.Tensor | None = None):
         super().__init__()
+        
+        # Store the ignore index and band width ratio as instance variables for use in the forward pass
         self.ignore_index = ignore_index
         self.band_width_ratio = band_width_ratio
+        
+        # Set class weights if provided
+        if class_weights is not None:
+            class_weights = class_weights.to(dtype=torch.float32)
+        self.register_buffer("class_weights", class_weights)
 
     def _get_band_width(self, height: int, width: int) -> int:
+        
+        # Calculate the image diagonal in pixels and determine the band width based on the configured ratio
         image_diagonal = math.sqrt(height * height + width * width)
         return max(1, int(self.band_width_ratio * image_diagonal))
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # Get the predicted probabilities from the logits and get valid masks for ignore_index
         probs = logits.softmax(dim=1)
         num_classes = logits.shape[1]
         valid_mask = (targets != self.ignore_index).unsqueeze(1)
 
-        targets_clean = targets.clone()
+        # One-hot encode targets, replacing ignore_index with 0 so they don't contribute to the band, and then apply the valid mask to ensure that ignore_index pixels do not contribute to the loss
+        targets_clean = targets.clone() 
         targets_clean[targets == self.ignore_index] = 0
         targets_one_hot = F.one_hot(targets_clean, num_classes=num_classes).permute(0, 3, 1, 2).to(dtype=probs.dtype)
         targets_one_hot = targets_one_hot * valid_mask.to(dtype=probs.dtype)
 
+        # Get band width based on the image size and apply morphological dilation and erosion to create an outer and inner band around the ground-truth mask.
         band_width = self._get_band_width(*targets.shape[-2:])
         dilated = F.max_pool2d(targets_one_hot,
                                kernel_size=2 * band_width + 1,
                                stride=1,
                                padding=band_width)
+        
         eroded = 1.0 - F.max_pool2d(1.0 - targets_one_hot,
                                     kernel_size=2 * band_width + 1,
                                     stride=1,
                                     padding=band_width)
 
+        # Get outer and inner bands by taking the difference between the dilated and eroded masks and the original mask, respectively.
         outer_band = (dilated - targets_one_hot).clamp_min(0.0) * valid_mask.to(dtype=probs.dtype)
         inner_band = (targets_one_hot - eroded).clamp_min(0.0) * valid_mask.to(dtype=probs.dtype)
+        
         # Use a signed band so probabilities are encouraged on the inside boundary and discouraged just outside it.
         signed_band = outer_band - inner_band
 
+        # Compute a weighted average of the signed band values at the predicted probabilities for each class, and normalize by the total weight of the band to get a per-class boundary score.
+        # Then average over classes, applying class weights if provided, to get the final boundary loss.
         boundary_weight = signed_band.abs().sum(dim=(2, 3))
         boundary_score = (probs * signed_band).sum(dim=(2, 3))
         valid_classes = boundary_weight > 0
@@ -395,7 +415,16 @@ class BoundaryLoss(nn.Module):
 
         normalized_score = torch.zeros_like(boundary_score)
         normalized_score[valid_classes] = boundary_score[valid_classes] / boundary_weight[valid_classes]
-        return normalized_score[valid_classes].mean()
+
+        if self.class_weights is None:
+            return normalized_score[valid_classes].mean()
+
+        if self.class_weights.numel() != num_classes:
+            raise ValueError(f"Expected {num_classes} class weights, but got {self.class_weights.numel()}")
+
+        class_weights = self.class_weights.to(device=logits.device, dtype=normalized_score.dtype).unsqueeze(0).expand_as(normalized_score)
+        valid_class_weights = class_weights[valid_classes]
+        return (normalized_score[valid_classes] * valid_class_weights).sum() / valid_class_weights.sum()
 
 
 class RebalancedBoundaryLoss(nn.Module):
@@ -412,6 +441,7 @@ class RebalancedBoundaryLoss(nn.Module):
                  alpha_start=0.01,
                  alpha_end=0.5,
                  num_epochs=10):
+        
         super().__init__()
         self.ce = ce_loss
         self.dice = dice_loss
@@ -423,9 +453,10 @@ class RebalancedBoundaryLoss(nn.Module):
         self.num_epochs = num_epochs
 
     def get_alpha(self, epoch: int) -> float:
+        # Linearly rebalance alpha from alpha_start to alpha_end across the configured number of epochs
         alpha_min = min(self.alpha_start, self.alpha_end)
         alpha_max = max(self.alpha_start, self.alpha_end)
-
+        
         if self.num_epochs > 1:
             alpha = self.alpha_start + (epoch / (self.num_epochs - 1)) * (self.alpha_end - self.alpha_start)
         else:
@@ -438,25 +469,77 @@ class RebalancedBoundaryLoss(nn.Module):
                 targets: torch.Tensor,
                 epoch: int,
                 return_components: bool = False):
+        
+        # Get all individual loss components
         ce_loss = self.ce(logits, targets)
         dice_loss = self.dice(logits, targets)
         boundary_loss = self.boundary(logits, targets)
 
-        regional_loss = self.ce_weight * ce_loss + self.dice_weight * dice_loss
+        # Calculate the combined loss with dynamic alpha rebalancing
+        regional_loss = self.ce_weight * ce_loss + self.dice_weight * dice_loss 
         alpha = logits.new_tensor(self.get_alpha(epoch))
         total_loss = (1.0 - alpha) * regional_loss + alpha * boundary_loss
 
         if not return_components:
             return total_loss
 
-        return total_loss, {
-            "total_loss": total_loss.detach(),
-            "ce_loss": ce_loss.detach(),
-            "dice_loss": dice_loss.detach(),
-            "boundary_loss": boundary_loss.detach(),
-            "regional_loss": regional_loss.detach(),
-            "alpha": alpha.detach(),
-        }
+        return total_loss, {"total_loss": total_loss.detach(),
+                            "ce_loss": ce_loss.detach(),
+                            "dice_loss": dice_loss.detach(),
+                            "boundary_loss": boundary_loss.detach(),
+                            "regional_loss": regional_loss.detach(),
+                            "alpha": alpha.detach()}
+
+
+
+
+class SafetyCriticalRebalancedBoundaryLoss(RebalancedBoundaryLoss):
+    """
+    Prior work has shown that semantic segmentation for autonomous driving should account for the unequal importance of object classes,
+    with safety-critical objects such as pedestrians and traffic signs requiring higher accuracy than background classes (Chen et al., 2019).
+
+    Building on this idea, we apply class-dependent weighting specifically to the boundary loss, 
+    emphasizing accurate delineation of safety-critical objects, whose boundaries are particularly important for collision avoidance.
+    """
+    
+    # Define the safety-critical classes to receive higher weights
+    # 6 = traffic light, 7 = traffic sign, 11 = person, 12 = rider, 17 = motorcycle, 18 = bicycle
+    safety_critical_class_ids = (6, 7, 11, 12, 17, 18)
+
+    def __init__(self,
+                 ce_loss,
+                 dice_loss,
+                 num_classes,
+                 ignore_index=255,
+                 band_width_ratio=0.005,
+                 ce_weight=1.0,
+                 dice_weight=0.5,
+                 alpha_start=0.01,
+                 alpha_end=0.5,
+                 num_epochs=10):
+        
+        # Initialize class weights with 1.0 for all classes, and set higher weights for safety-critical classes
+        class_weights = torch.ones(num_classes, dtype=torch.float32)
+        for class_index in self.safety_critical_class_ids:
+            if class_index >= num_classes:
+                raise ValueError(f"Safety-critical class index {class_index} is out of range for num_classes={num_classes}")
+            class_weights[class_index] = 2.0
+
+        # Pass the class weights to the BoundaryLoss, which will use them to weight the boundary loss contribution from each class accordingly
+        boundary_loss = BoundaryLoss(ignore_index=ignore_index,
+                                     band_width_ratio=band_width_ratio,
+                                     class_weights=class_weights)
+        
+        super().__init__(ce_loss=ce_loss,
+                         dice_loss=dice_loss,
+                         boundary_loss=boundary_loss,
+                         ce_weight=ce_weight,
+                         dice_weight=dice_weight,
+                         alpha_start=alpha_start,
+                         alpha_end=alpha_end,
+                         num_epochs=num_epochs)
+  
+  
     
 class FocalLoss(nn.Module):
     def __init__(self, ignore_index=255, gamma=2.0):
