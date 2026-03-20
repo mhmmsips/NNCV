@@ -711,29 +711,29 @@ def main(args):
     
     # Define the loss function
     # Experiment A: CE + Dice
-    # criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
+    criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
 
     # Experiment B: rebalanced CE + Dice + boundary loss
-    criterion = RebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
-                                       dice_loss=DiceLoss(ignore_index=255),
-                                       boundary_loss=BoundaryLoss(ignore_index=255),
-                                       ce_weight=1.0,
-                                       dice_weight=0.5,
-                                       alpha_start=0.01,
-                                       alpha_end=0.5,
-                                       num_epochs=args.epochs)
+    # criterion = RebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
+    #                                    dice_loss=DiceLoss(ignore_index=255),
+    #                                    boundary_loss=BoundaryLoss(ignore_index=255),
+    #                                    ce_weight=1.0,
+    #                                    dice_weight=0.5,
+    #                                    alpha_start=0.01,
+    #                                    alpha_end=0.5,
+    #                                    num_epochs=args.epochs)
     
     # Experiment C: safety-critical rebalanced CE + Dice + boundary loss
-    criterion = SafetyCriticalRebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
-                                                     dice_loss=DiceLoss(ignore_index=255),
-                                                     num_classes=19,
-                                                     ignore_index=255,
-                                                     band_width_ratio=0.005,
-                                                     ce_weight=1.0,
-                                                     dice_weight=0.5,
-                                                     alpha_start=0.01,
-                                                     alpha_end=0.5,
-                                                     num_epochs=args.epochs)
+    # criterion = SafetyCriticalRebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
+    #                                                  dice_loss=DiceLoss(ignore_index=255),
+    #                                                  num_classes=19,
+    #                                                  ignore_index=255,
+    #                                                  band_width_ratio=0.005,
+    #                                                  ce_weight=1.0,
+    #                                                  dice_weight=0.5,
+    #                                                  alpha_start=0.01,
+    #                                                  alpha_end=0.5,
+    #                                                  num_epochs=args.epochs)
 
     #UNUSED EXPERIMENTS, BUT COULD BE INTERESTING TO TRY:
     # Experiment D: CE only
