@@ -31,11 +31,8 @@ from torchvision.utils import make_grid
 from torchvision.transforms.v2 import (
     Compose,
     Normalize,
-    Resize,
     ToImage,
     ToDtype,
-    InterpolationMode,
-    Pad,
     RandomHorizontalFlip,
     ColorJitter,
     GaussianBlur,
@@ -47,7 +44,7 @@ from model import Model
 
 # Mapping class IDs to train IDs
 id_to_trainid = {cls.id: cls.train_id for cls in Cityscapes.classes}
-id_to_trainid[255] = 255  # Padded ignore pixels should stay as 255
+id_to_trainid[255] = 255  # Ignore pixels should stay as 255
 def convert_to_train_id(label_img: torch.Tensor) -> torch.Tensor:
     return label_img.apply_(lambda x: id_to_trainid[x])
 
@@ -636,7 +633,6 @@ def main(args):
     # Training transform (with augmentations)
     train_img_transform = Compose([
         ToImage(),
-        Resize((512, 512)), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 512x512 images
         ToDtype(torch.float32, scale=True),
         ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
         RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
@@ -646,20 +642,18 @@ def main(args):
     # Validation transform (NO augmentations)
     val_img_transform = Compose([
         ToImage(),
-        Resize((512, 512)), #ENSURE DIVISIBILITY BY PATCH SIZE #NOTE: DINOv2 was trained on 512x512 images
         ToDtype(torch.float32, scale=True),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
     ])
 
     
-    # Target transform for TRAINING (resize (+pad) to match model input)
+    # Target transform for TRAINING
     train_target_transform = Compose([
         ToImage(),
-        Resize((512, 512), interpolation=InterpolationMode.NEAREST),
         ToDtype(torch.int64),
     ])
 
-    # Target transform for VALIDATION (keep original resolution; matches server evaluation)
+    # Target transform for VALIDATION
     val_target_transform = Compose([
         ToImage(),
         ToDtype(torch.int64),
@@ -828,18 +822,11 @@ def main(args):
 
                 labels = convert_to_train_id(labels)
                 images, labels = images.to(device), labels.to(device)
-                labels = labels.long().squeeze(1)   # (B, 1024, 2048); full original resolution
-
-                # Shrink labels to 512x512 only for loss computation (must match model output size)
-                labels_for_loss = F.interpolate(
-                    labels.unsqueeze(1).float(),
-                    size=(512, 512),
-                    mode='nearest'
-                ).long().squeeze(1)
+                labels = labels.long().squeeze(1)
             
                 with accelerator.autocast():
                     outputs = model(images)
-                    loss, loss_components = compute_loss_with_components(criterion, outputs, labels_for_loss, epoch)
+                    loss, loss_components = compute_loss_with_components(criterion, outputs, labels, epoch)
 
                 valid_loss_sum += loss.detach()
                 valid_loss_count += 1
@@ -851,13 +838,8 @@ def main(args):
                 for name, value in loss_components.items():
                     valid_loss_components_sum[name] += value.detach().float().reshape(1)
 
-                # Upsample predictions to original resolution; THIS is what the submission server evaluates
-                orig_h, orig_w = labels.shape[-2], labels.shape[-1]
-                predictions = F.interpolate(outputs.softmax(1).argmax(1, keepdim=True).float(),
-                                            size=(orig_h, orig_w),
-                                            mode='nearest').long().squeeze(1)   # (B, 1024, 2048)
+                predictions = outputs.softmax(1).argmax(1)
 
-                # Now both predictions and labels are at 1024x2048; matches server exactly
                 class_confusion_matrix = update_class_confusion_matrix(class_confusion_matrix,
                                                                        predictions,
                                                                        labels)
@@ -871,18 +853,14 @@ def main(args):
 
                 # Log to W&B some validation images
                 if i == 0 and accelerator.is_main_process:
-                    preds_vis = F.interpolate(
-                        predictions.unsqueeze(1).float(), size=(512, 512), mode='nearest'
-                    ).long()
-                    labels_vis = F.interpolate(
-                        labels.unsqueeze(1).float(), size=(512, 512), mode='nearest'
-                    ).long()
+                    preds_vis = predictions[:2].unsqueeze(1)
+                    labels_vis = labels[:2].unsqueeze(1)
 
                     preds_vis = convert_train_id_to_color(preds_vis)
                     labels_vis = convert_train_id_to_color(labels_vis)
 
-                    predictions_img = make_grid(preds_vis.cpu(), nrow=8).permute(1, 2, 0).numpy()
-                    labels_img = make_grid(labels_vis.cpu(), nrow=8).permute(1, 2, 0).numpy()
+                    predictions_img = make_grid(preds_vis.cpu(), nrow=2).permute(1, 2, 0).numpy()
+                    labels_img = make_grid(labels_vis.cpu(), nrow=2).permute(1, 2, 0).numpy()
 
                     wandb.log({
                         "predictions": [wandb.Image(predictions_img)],
