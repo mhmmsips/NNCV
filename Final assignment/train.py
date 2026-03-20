@@ -497,9 +497,16 @@ class SafetyCriticalRebalancedBoundaryLoss(RebalancedBoundaryLoss):
     """
     Prior work has shown that semantic segmentation for autonomous driving should account for the unequal importance of object classes,
     with safety-critical objects such as pedestrians and traffic signs requiring higher accuracy than background classes (Chen et al., 2019).
+    
+    Title: Importance-Aware Semantic Segmentation for Autonomous Vehicles
+    Authors: Chen et al. (full: Bike Chen, Chen Gong, and Jian Yang)
+    Year: 2019
+    Journal: IEEE Transactions on Intelligent Transportation Systems, vol. 20, no. 1, pp. 137–148
 
-    Building on this idea, we apply class-dependent weighting specifically to the boundary loss, 
+    Building on this idea, a class-dependent weighting is applied specifically to the boundary loss, 
     emphasizing accurate delineation of safety-critical objects, whose boundaries are particularly important for collision avoidance.
+    
+    #NOTE: The weights applied have been set to 2.0 (double) for safety-critical classes, but no sensitivity analysis has been done to find the optimal values. It would be interesting to experiment with different weights and see how they affect the performance on safety-critical classes and overall metrics.
     """
     
     # Define the safety-critical classes to receive higher weights
@@ -540,7 +547,8 @@ class SafetyCriticalRebalancedBoundaryLoss(RebalancedBoundaryLoss):
                          num_epochs=num_epochs)
   
   
-    
+#NOTE: Not used as of now, but implemented as backup plan in case the boundary aware losses do not work out
+#NOTE: Focal loss is designed to address class imbalance by down-weighting easy examples and focusing training on hard examples.
 class FocalLoss(nn.Module):
     def __init__(self, ignore_index=255, gamma=2.0):
         super().__init__()
@@ -708,27 +716,38 @@ def main(args):
     ).to(device)
     
     # Define the loss function
-    # Experiment A: CE only (your current baseline)
-    # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
-
-    # Experiment B: CE + Dice
+    # Experiment A: CE + Dice
     # criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
 
-    # Experiment C: Focal loss
+    # Experiment B: rebalanced CE + Dice + boundary loss
+    criterion = RebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
+                                       dice_loss=DiceLoss(ignore_index=255),
+                                       boundary_loss=BoundaryLoss(ignore_index=255),
+                                       ce_weight=1.0,
+                                       dice_weight=0.5,
+                                       alpha_start=0.01,
+                                       alpha_end=0.5,
+                                       num_epochs=args.epochs)
+    
+    # Experiment C: safety-critical rebalanced CE + Dice + boundary loss
+    criterion = SafetyCriticalRebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
+                                                     dice_loss=DiceLoss(ignore_index=255),
+                                                     num_classes=19,
+                                                     ignore_index=255,
+                                                     band_width_ratio=0.005,
+                                                     ce_weight=1.0,
+                                                     dice_weight=0.5,
+                                                     alpha_start=0.01,
+                                                     alpha_end=0.5,
+                                                     num_epochs=args.epochs)
+
+    #UNUSED EXPERIMENTS, BUT COULD BE INTERESTING TO TRY:
+    # Experiment D: CE only
+    # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
+    
+    # Experiment E: Focal loss
     # criterion = FocalLoss(ignore_index=255, gamma=2.0)
-
-    # Experiment D: rebalanced CE + Dice + boundary loss
-    criterion = RebalancedBoundaryLoss(
-        ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
-        dice_loss=DiceLoss(ignore_index=255),
-        boundary_loss=BoundaryLoss(ignore_index=255),
-        ce_weight=1.0,
-        dice_weight=0.5,
-        alpha_start=0.01,
-        alpha_end=0.5,
-        num_epochs=args.epochs,
-    )
-
+    
     # Define the optimizer (SGD)
     optimizer = optim.SGD(model.parameters(),
                           lr=args.lr,
