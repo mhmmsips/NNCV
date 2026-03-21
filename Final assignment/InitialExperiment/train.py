@@ -777,6 +777,7 @@ def main(args):
     # Training loop
     best_valid_loss = float('inf')
     current_best_model_path = None
+    train_step = 0
     for epoch in range(args.epochs):
         # Print epochs in the slurm-*.out job output files, to track training progress from the server console as well
         epoch_alpha = criterion.get_alpha(epoch) if isinstance(criterion, RebalancedBoundaryLoss) else None
@@ -812,8 +813,11 @@ def main(args):
                 for name, value in loss_components.items()
             }
 
-            # Log the training metrics
-            if accelerator.is_main_process:
+            # Log the training metrics only on real optimizer update steps
+            if accelerator.sync_gradients:
+                train_step += 1
+
+            if accelerator.is_main_process and accelerator.sync_gradients:
                 train_metrics = {
                     "train_loss": gathered_loss,
                     "learning_rate": optimizer.param_groups[0]['lr'],
@@ -821,7 +825,7 @@ def main(args):
                 }
                 for name, value in gathered_loss_components.items():
                     train_metrics[f"train_{name}"] = value
-                wandb.log(train_metrics, step=epoch * len(train_dataloader) + i)
+                wandb.log(train_metrics, step=train_step)
             
         # Validation
         model.eval()
@@ -881,7 +885,7 @@ def main(args):
                     wandb.log({
                         "predictions": [wandb.Image(predictions_img)],
                         "labels": [wandb.Image(labels_img)],
-                    }, step=(epoch + 1) * len(train_dataloader) - 1)
+                    }, step=train_step)
             
             # Aggregate the validation loss sums and counts across all processes, and compute the final validation loss for this epoch on the main process
             valid_loss_sum = accelerator.gather(valid_loss_sum).sum()
@@ -910,7 +914,7 @@ def main(args):
                 if valid_loss_components_sum is not None:
                     for name, value in valid_loss_components_sum.items():
                         validation_metrics[f"valid_{name}"] = (value / valid_loss_count).item()
-                wandb.log(validation_metrics, step=(epoch + 1) * len(train_dataloader) - 1)
+                wandb.log(validation_metrics, step=train_step)
 
                 if valid_loss < best_valid_loss:
                     best_valid_loss = valid_loss
