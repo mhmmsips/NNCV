@@ -45,8 +45,6 @@ from model import Model
 # Mapping class IDs to train IDs
 id_to_trainid = {cls.id: cls.train_id for cls in Cityscapes.classes}
 id_to_trainid[255] = 255  # Ignore pixels should stay as 255
-def convert_to_train_id(label_img: torch.Tensor) -> torch.Tensor:
-    return label_img.apply_(lambda x: id_to_trainid[x])
 
 # Mapping train IDs to color
 #NOTE train_id == 255 is used for the 'void' category, which is ignored during training and evaluation. We assign it a color (black) for visualization purposes.
@@ -701,6 +699,7 @@ def main(args):
         train_dataset, 
         batch_size=args.batch_size, 
         shuffle=True,
+        drop_last=True,
         num_workers=args.num_workers,
         worker_init_fn=seed_worker,
         generator=train_generator
@@ -774,6 +773,10 @@ def main(args):
                                                                                           valid_dataloader,
                                                                                           scheduler)
 
+    label_lookup = torch.full((256,), 255, dtype=torch.long)
+    for k, v in id_to_trainid.items():
+        label_lookup[k] = v
+
     # Training loop
     best_valid_loss = float('inf')
     current_best_model_path = None
@@ -791,10 +794,8 @@ def main(args):
         optimizer.zero_grad(set_to_none=True)
         for i, (images, labels) in enumerate(train_dataloader):
 
-            labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
-            images, labels = images.to(device), labels.to(device)
-
-            labels = labels.long().squeeze(1)  # Remove channel dimension
+            images = images.to(device)
+            labels = label_lookup[labels.squeeze(1)].to(device)
 
             # Use accelerator to handle mixed precision and gradient accumulation
             with accelerator.accumulate(model):
@@ -805,6 +806,7 @@ def main(args):
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     optimizer.step()
+                    current_lr = optimizer.param_groups[0]['lr']
                     scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
 
@@ -821,7 +823,7 @@ def main(args):
             if accelerator.is_main_process and accelerator.sync_gradients:
                 train_metrics = {
                     "train_loss": gathered_loss,
-                    "learning_rate": optimizer.param_groups[0]['lr'],
+                    "learning_rate": current_lr,
                     "epoch": epoch + 1,
                 }
                 for name, value in gathered_loss_components.items():
@@ -841,9 +843,8 @@ def main(args):
             
             for i, (images, labels) in enumerate(valid_dataloader):
 
-                labels = convert_to_train_id(labels)
-                images, labels = images.to(device), labels.to(device)
-                labels = labels.long().squeeze(1)
+                images = images.to(device)
+                labels = label_lookup[labels.squeeze(1)].to(device)
             
                 with accelerator.autocast():
                     outputs = model(images)
