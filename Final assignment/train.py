@@ -39,7 +39,6 @@ from torchvision.transforms.v2 import (
     RandomApply,
 )
 import math
-from model import Model
 
 
 # Mapping class IDs to train IDs
@@ -600,7 +599,7 @@ def seed_worker(worker_id):
 
 def get_args_parser():
 
-    parser = ArgumentParser("Training script for a PyTorch U-Net model")
+    parser = ArgumentParser("Training script for DINO-based semantic segmentation")
     parser.add_argument("--data-dir", type=str, default="./data/cityscapes", help="Path to the training data")
     parser.add_argument("--batch-size", type=int, default=64, help="Training batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
@@ -610,6 +609,7 @@ def get_args_parser():
     parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of gradient accumulation steps")
     parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"], help="Mixed precision mode")
+    parser.add_argument("--decoder", type=str, default="linear", choices=["linear", "upsample", "EoMT"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
 
     return parser
 
@@ -716,10 +716,31 @@ def main(args):
     )
 
     # Define the model
-    model = Model(
-        in_channels=3,  # RGB images
-        n_classes=19,  # 19 classes in the Cityscapes dataset
-    ).to(device)
+    from model import DinoEoMT, DinoLinearDecoder, DinoUpsamplingDecoder
+
+    if args.decoder == "linear":
+        model = DinoLinearDecoder(n_classes=19)
+    elif args.decoder == "upsample":
+        model = DinoUpsamplingDecoder(n_classes=19)
+    elif args.decoder == "EoMT":
+        model = DinoEoMT(n_classes=19)
+    else:
+        raise ValueError("Unknown decoder")
+
+    model = model.to(device)
+    
+    # For the plain DINOv2 models, freeze the entire backbone and train only the decoder head.
+    # EoMT is used here as a frozen pretrained baseline, so none of its parameters are updated.
+    if args.decoder == "EoMT":
+        for param in model.parameters():
+            param.requires_grad = False
+    else:
+        for param in model.backbone.parameters():
+            param.requires_grad = False
+        for param in model.decoder.parameters():
+            param.requires_grad = True
+
+    is_trainable_model = args.decoder != "EoMT"
     
     # Define the loss function
     # Experiment A: CE + Dice
@@ -787,45 +808,50 @@ def main(args):
             accelerator.print(f"Epoch {epoch+1:04}/{args.epochs:04} | alpha={epoch_alpha:.4f}")
 
         # Training
-        model.train()
-        optimizer.zero_grad(set_to_none=True)
-        for i, (images, labels) in enumerate(train_dataloader):
+        if is_trainable_model:
+            model.train()
+            optimizer.zero_grad(set_to_none=True)
+            for i, (images, labels) in enumerate(train_dataloader):
 
-            labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
-            images, labels = images.to(device), labels.to(device)
+                labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
+                images, labels = images.to(device), labels.to(device)
 
-            labels = labels.long().squeeze(1)  # Remove channel dimension
+                labels = labels.long().squeeze(1)  # Remove channel dimension
 
-            # Use accelerator to handle mixed precision and gradient accumulation
-            with accelerator.accumulate(model):
-                with accelerator.autocast():
-                    outputs = model(images)
-                    loss, loss_components = compute_loss_with_components(criterion, outputs, labels, epoch)
+                # Use accelerator to handle mixed precision and gradient accumulation
+                with accelerator.accumulate(model):
+                    with accelerator.autocast():
+                        outputs = model(images)
+                        loss, loss_components = compute_loss_with_components(criterion, outputs, labels, epoch)
 
-                accelerator.backward(loss)
-                if accelerator.sync_gradients:
-                    optimizer.step()
-                    optimizer.zero_grad(set_to_none=True)
+                    accelerator.backward(loss)
+                    if accelerator.sync_gradients:
+                        optimizer.step()
+                        optimizer.zero_grad(set_to_none=True)
 
-            gathered_loss = accelerator.gather(loss.detach().reshape(1)).mean().item() # NOTE: gradient accumulation
-            gathered_loss_components = {
-                name: accelerator.gather(value.detach().float().reshape(1)).mean().item()
-                for name, value in loss_components.items()
-            }
-
-            # Log the training metrics only on real optimizer update steps
-            if accelerator.sync_gradients:
-                train_step += 1
-
-            if accelerator.is_main_process and accelerator.sync_gradients:
-                train_metrics = {
-                    "train_loss": gathered_loss,
-                    "learning_rate": optimizer.param_groups[0]['lr'],
-                    "epoch": epoch + 1,
+                gathered_loss = accelerator.gather(loss.detach().reshape(1)).mean().item() # NOTE: gradient accumulation
+                gathered_loss_components = {
+                    name: accelerator.gather(value.detach().float().reshape(1)).mean().item()
+                    for name, value in loss_components.items()
                 }
-                for name, value in gathered_loss_components.items():
-                    train_metrics[f"train_{name}"] = value
-                wandb.log(train_metrics, step=train_step)
+
+                # Log the training metrics only on real optimizer update steps
+                if accelerator.sync_gradients:
+                    train_step += 1
+
+                if accelerator.is_main_process and accelerator.sync_gradients:
+                    train_metrics = {
+                        "train_loss": gathered_loss,
+                        "learning_rate": optimizer.param_groups[0]['lr'],
+                        "epoch": epoch + 1,
+                    }
+                    for name, value in gathered_loss_components.items():
+                        train_metrics[f"train_{name}"] = value
+                    wandb.log(train_metrics, step=train_step)
+        else:
+            model.eval()
+            if accelerator.is_main_process:
+                wandb.log({"epoch": epoch + 1}, step=epoch + 1)
             
         # Validation
         model.eval()
@@ -882,10 +908,11 @@ def main(args):
                     predictions_img = make_grid(preds_vis.cpu(), nrow=2).permute(1, 2, 0).numpy()
                     labels_img = make_grid(labels_vis.cpu(), nrow=2).permute(1, 2, 0).numpy()
 
+                    validation_step = train_step if is_trainable_model else epoch + 1
                     wandb.log({
                         "predictions": [wandb.Image(predictions_img)],
                         "labels": [wandb.Image(labels_img)],
-                    }, step=train_step)
+                    }, step=validation_step)
             
             # Aggregate the validation loss sums and counts across all processes, and compute the final validation loss for this epoch on the main process
             valid_loss_sum = accelerator.gather(valid_loss_sum).sum()
@@ -914,7 +941,8 @@ def main(args):
                 if valid_loss_components_sum is not None:
                     for name, value in valid_loss_components_sum.items():
                         validation_metrics[f"valid_{name}"] = (value / valid_loss_count).item()
-                wandb.log(validation_metrics, step=train_step)
+                validation_step = train_step if is_trainable_model else epoch + 1
+                wandb.log(validation_metrics, step=validation_step)
 
                 if valid_loss < best_valid_loss:
                     best_valid_loss = valid_loss
@@ -930,7 +958,8 @@ def main(args):
                     )
 
             # Step the LR scheduler at the end of the epoch, after validation
-            scheduler.step()
+            if is_trainable_model:
+                scheduler.step()
         
     accelerator.print("Training complete!")
 
