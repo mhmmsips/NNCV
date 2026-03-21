@@ -233,6 +233,8 @@ class DinoUpsamplingDecoder(DinoSegBase):
     """
     Progressive upsampling convolutional decoder on top of DINOv2 patch features.
     Not a true U-Net, because there are no encoder-decoder skip connections; but inspired by the U-Net decoder design with repeated upsampling and conv blocks.
+    
+    NOTE: Aimed at matching the number of parameters from the U-net decoder (7.9M), where this one has 9.4M for DinoV2 (so this is slightly bigger)
     """
 
     def _build_decoder(self) -> nn.Module:

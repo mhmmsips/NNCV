@@ -16,6 +16,5 @@ python3 -m accelerate.commands.launch \
     --seed 42 \
     --gradient-accumulation-steps 4 \
     --mixed-precision "fp16" \
-    --experiment-id "Accelerate_Unet_512x512"
-    # --backbone "facebook/dinov2-small"
-    # --decoder "upsample"
+    --experiment-id "DINOv2_upsample" \
+    --decoder "upsample"
