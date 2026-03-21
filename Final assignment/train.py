@@ -33,6 +33,7 @@ from torchvision.transforms.v2 import (
     Normalize,
     ToImage,
     ToDtype,
+    Pad,
     RandomHorizontalFlip,
     ColorJitter,
     GaussianBlur,
@@ -642,12 +643,17 @@ def main(args):
     # Define the device
     device = accelerator.device
     
+    # Cityscapes images are 1024x2048, while DINOv2-L/14 uses a 14x14 patch size.
+    # Pad to 1036x2058 so both spatial dimensions become divisible by 14 and no border pixels are dropped by the patch embedding.
+    image_padding = (5, 6, 5, 6) # left, top, right, bottom
+
     # Training transform (with augmentations)
     train_img_transform = Compose([
         ToImage(),
         ToDtype(torch.float32, scale=True),
         ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
         RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
+        Pad(padding=image_padding, fill=0),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
     ])
 
@@ -655,6 +661,7 @@ def main(args):
     val_img_transform = Compose([
         ToImage(),
         ToDtype(torch.float32, scale=True),
+        Pad(padding=image_padding, fill=0),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)), #NOTE: (CHECK IF TRUE) DINOv2 was trained with ImageNet normalization, so we use those mean and std values here 
     ])
 
@@ -662,12 +669,14 @@ def main(args):
     # Target transform for TRAINING
     train_target_transform = Compose([
         ToImage(),
+        Pad(padding=image_padding, fill=255),
         ToDtype(torch.int64),
     ])
 
     # Target transform for VALIDATION
     val_target_transform = Compose([
         ToImage(),
+        Pad(padding=image_padding, fill=255),
         ToDtype(torch.int64),
     ])
 
