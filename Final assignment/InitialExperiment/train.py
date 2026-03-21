@@ -805,6 +805,7 @@ def main(args):
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     optimizer.step()
+                    scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
 
             gathered_loss = accelerator.gather(loss.detach().reshape(1)).mean().item() # NOTE: gradient accumulation
@@ -929,9 +930,6 @@ def main(args):
                         current_best_model_path,
                     )
 
-            # Step the LR scheduler at the end of the epoch, after validation
-            scheduler.step()
-        
     accelerator.print("Training complete!")
 
     # Save the model
