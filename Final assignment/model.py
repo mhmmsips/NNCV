@@ -6,6 +6,7 @@ from transformers import AutoModel, AutoModelForUniversalSegmentation
 
 # Define the fixed DINOv2 backbone and the EoMT checkpoint to use
 #NOTE: The main backbone experiments now use plain DINOv2-L/14, while EoMT is treated as its own pretrained segmentation model
+#NOTE: DINOv3 version of EoMT is available but does not have a checkpoint for Cityscapes. Also training that might be out of the scope for the course.
 dino_v2_backbone_name = "facebook/dinov2-large"
 eomt_backbone_name = "tue-mps/cityscapes_semantic_eomt_large_1024"
 
