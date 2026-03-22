@@ -281,11 +281,12 @@ class DinoEoMT(nn.Module):
     def __init__(self, model_name: str | None = None, n_classes: int = 19):
         super().__init__()
         
-
         # Load the pretrained EoMT segmentation model from Hugging Face
         self.n_classes = n_classes
         self.model_name = eomt_backbone_name
         self.model = AutoModelForUniversalSegmentation.from_pretrained(self.model_name)
+        self.window_size = 1024
+        self.window_stride = 768
         
         # Keep a reference to the underlying backbone so the training script can freeze/unfreeze it if needed
         self.backbone = getattr(self.model, "model", self.model)
@@ -296,9 +297,10 @@ class DinoEoMT(nn.Module):
         else:
             self.class_adapter = nn.Identity()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _forward_window(self, x: torch.Tensor) -> torch.Tensor:
+        """Runs the pretrained EoMT model on a single 1024x1024 crop or window."""
         H, W = x.shape[-2:]
-        
+
         # Run the EoMT model to obtain query classification scores and mask logits
         outputs = self.model(pixel_values=x)
 
@@ -313,3 +315,49 @@ class DinoEoMT(nn.Module):
                              size=(H, W),
                              mode="bilinear",
                              align_corners=False)
+
+    def _get_window_starts(self, image_size: int) -> list[int]:
+        """Builds overlapping window start indices and ensures the final window reaches the image border."""
+        if image_size <= self.window_size:
+            return [0]
+
+        starts = list(range(0, image_size - self.window_size + 1, self.window_stride))
+        last_start = image_size - self.window_size
+        if starts[-1] != last_start:
+            starts.append(last_start)
+        return starts
+
+    def _forward_sliding_window(self, x: torch.Tensor) -> torch.Tensor:
+        """Runs overlapping sliding-window inference and averages logits in overlap regions."""
+        batch_size, _, height, width = x.shape
+        output_sum = torch.zeros((batch_size, self.n_classes, height, width), dtype=torch.float32, device=x.device)
+        output_count = torch.zeros((batch_size, 1, height, width), dtype=torch.float32, device=x.device)
+
+        y_starts = self._get_window_starts(height)
+        x_starts = self._get_window_starts(width)
+
+        # Process each image independently so the shared training loop can still pass a full batch into model(images).
+        for batch_index in range(batch_size):
+            image = x[batch_index:batch_index + 1]
+
+            for y0 in y_starts:
+                y1 = min(y0 + self.window_size, height)
+                for x0 in x_starts:
+                    x1 = min(x0 + self.window_size, width)
+
+                    window = image[:, :, y0:y1, x0:x1]
+                    window_logits = self._forward_window(window).float()
+
+                    output_sum[batch_index:batch_index + 1, :, y0:y1, x0:x1] += window_logits
+                    output_count[batch_index:batch_index + 1, :, y0:y1, x0:x1] += 1.0
+
+        return output_sum / output_count.clamp_min(1.0)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # The pretrained Cityscapes EoMT checkpoint expects 1024x1024 views.
+        # For full-resolution Cityscapes inference, run overlapping sliding-window inference and average the logits in overlap regions.
+        height, width = x.shape[-2:]
+        if height > self.window_size or width > self.window_size:
+            return self._forward_sliding_window(x)
+
+        return self._forward_window(x)
