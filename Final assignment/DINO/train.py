@@ -64,8 +64,7 @@ def convert_train_id_to_color(prediction: torch.Tensor) -> torch.Tensor:
     return color_image
 
 
-# Metrics are computed per Cityscapes train class first, then averaged into the
-# seven submission super-categories with an unweighted mean over the member classes.
+# Metrics are computed per Cityscapes train class first, then averaged into the seven submission super-categories with an unweighted mean over the member classes.
 class_names = ("Road",
                "Sidewalk",
                "Building",
@@ -95,15 +94,13 @@ category_names = ("Flat",
                   "Vehicle")
 
 # Mapping found on https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/helpers/labels.py and https://www.cityscapes-dataset.com/dataset-overview/#class-definitions
-category_to_train_ids = (
-    (0, 1),
-    (2, 3, 4),
-    (5, 6, 7),
-    (8, 9),
-    (10,),
-    (11, 12),
-    (13, 14, 15, 16, 17, 18),
-)
+category_to_train_ids = ((0, 1),
+                         (2, 3, 4),
+                         (5, 6, 7),
+                         (8, 9),
+                         (10,),
+                         (11, 12),
+                         (13, 14, 15, 16, 17, 18))
 
 # Define the safety-critical classes to receive higher weights in the safety-critical boundary loss
 # 6 = traffic light, 7 = traffic sign, 11 = person, 12 = rider, 17 = motorcycle, 18 = bicycle
@@ -515,6 +512,7 @@ class SafetyCriticalRebalancedBoundaryLoss(RebalancedBoundaryLoss):
     emphasizing accurate delineation of safety-critical objects, whose boundaries are particularly important for collision avoidance.
     
     #NOTE: The weights applied have been set to 2.0 (double) for safety-critical classes, but no sensitivity analysis has been done to find the optimal values. It would be interesting to experiment with different weights and see how they affect the performance on safety-critical classes and overall metrics.
+    #NOTE: Also, there should be an ethical disclaimer about this in the report as the quantification of this weighting.
     """
     
     # Set to variable in the scope of the class
@@ -751,30 +749,17 @@ def main(args):
     is_trainable_model = args.decoder != "EoMT"
     
     # Define the loss function
-    # Experiment A: CE + Dice
-    criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
-
-    # Experiment B: rebalanced CE + Dice + boundary loss
-    # criterion = RebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
-    #                                    dice_loss=DiceLoss(ignore_index=255),
-    #                                    boundary_loss=BoundaryLoss(ignore_index=255),
-    #                                    ce_weight=1.0,
-    #                                    dice_weight=0.5,
-    #                                    alpha_start=0.01,
-    #                                    alpha_end=0.5,
-    #                                    num_epochs=args.epochs)
-    
     # Experiment C: safety-critical rebalanced CE + Dice + boundary loss
-    # criterion = SafetyCriticalRebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
-    #                                                  dice_loss=DiceLoss(ignore_index=255),
-    #                                                  num_classes=19,
-    #                                                  ignore_index=255,
-    #                                                  band_width_ratio=0.005,
-    #                                                  ce_weight=1.0,
-    #                                                  dice_weight=0.5,
-    #                                                  alpha_start=0.01,
-    #                                                  alpha_end=0.5,
-    #                                                  num_epochs=args.epochs)
+    criterion = SafetyCriticalRebalancedBoundaryLoss(ce_loss=nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1),
+                                                     dice_loss=DiceLoss(ignore_index=255),
+                                                     num_classes=19,
+                                                     ignore_index=255,
+                                                     band_width_ratio=0.005,
+                                                     ce_weight=1.0,
+                                                     dice_weight=0.5,
+                                                     alpha_start=0.01,
+                                                     alpha_end=0.5,
+                                                     num_epochs=args.epochs)
 
     #UNUSED EXPERIMENTS, BUT COULD BE INTERESTING TO TRY:
     # Experiment D: CE only
