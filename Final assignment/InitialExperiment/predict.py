@@ -38,7 +38,7 @@ MODEL_PATH = "/app/model.pt"
 def preprocess(img: Image.Image) -> torch.Tensor:
     transform = Compose([
         ToImage(),
-        Resize(size=(512, 512), interpolation=InterpolationMode.BILINEAR),
+        # Resize(size=(512, 512), interpolation=InterpolationMode.BILINEAR),
         ToDtype(dtype=torch.float32, scale=True),
         Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),  # ImageNet normalization
     ])
@@ -61,13 +61,6 @@ def postprocess(pred: torch.Tensor, original_shape: tuple) -> np.ndarray:
 
     return prediction_numpy
 
-def remap_train_ids_to_class_ids(prediction: np.ndarray) -> np.ndarray:
-    trainid_to_id = {cls.train_id: cls.id for cls in Cityscapes.classes}
-    trainid_to_id[255] = 255
-    result = np.zeros_like(prediction)
-    for train_id, class_id in trainid_to_id.items():
-        result[prediction == train_id] = class_id
-    return result
 
 
 def main():
@@ -108,8 +101,7 @@ def main():
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save predicted mask
-            # Image.fromarray(seg_pred.astype(np.uint8)).save(out_path)
-            Image.fromarray(remap_train_ids_to_class_ids(seg_pred).astype(np.uint8)).save(out_path)
+            Image.fromarray(seg_pred.astype(np.uint8)).save(out_path)
 
 
 if __name__ == "__main__":
