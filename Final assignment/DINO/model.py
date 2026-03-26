@@ -267,7 +267,75 @@ class DinoUpsamplingDecoder(DinoSegBase):
                              align_corners=False)
 
 
-# Experiment 3: EoMT-DINOv2 (encoder-only)
+#Experiment 3: MLP decoder
+class MLPHead(nn.Module):
+    """
+    True per-token MLP decoder head applied on the final DINOv2 patch feature map.
+
+    Treats each patch token as an independent feature vector and applies a shared two-layer MLP across all tokens simultaneously.
+    The spatial structure is temporarily collapsed for the linear operations and restored afterwards.
+    This puts the parameter count between the linear head and the full upsampling decoder.
+    """
+
+    def __init__(self,
+                 in_channels: int,
+                 hidden_channels: int,
+                 n_output_channels: int):
+        super().__init__()
+
+        # Shared MLP applied independently to each patch token: in -> hidden -> hidden//2 -> out
+        # LayerNorm is used instead of BatchNorm because we operate on the channel (feature) dimension per token, not on the spatial batch dimension 
+        self.mlp = nn.Sequential(nn.Linear(in_channels, hidden_channels),
+                                 nn.LayerNorm(hidden_channels),
+                                 nn.ReLU(inplace=True),
+                                 nn.Linear(hidden_channels, hidden_channels // 2),
+                                 nn.LayerNorm(hidden_channels // 2),
+                                 nn.ReLU(inplace=True),
+                                 nn.Linear(hidden_channels // 2, n_output_channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Process each token independently with the shared MLP. The input is in (B, C, H, W) format, so reshape it to (B*H*W, C) to apply the MLP across all tokens at once.
+        B, C, H, W = x.shape
+        tokens = x.permute(0, 2, 3, 1).reshape(B * H * W, C)
+
+        # Apply the shared MLP to all tokens at once, then restore the spatial grid
+        out = self.mlp(tokens)
+        return out.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+
+
+class DinoMLPDecoder(DinoSegBase):
+    """
+    Lightweight pointwise MLP decoder on top of the fixed DINOv2 backbone.
+
+    Operates on the final patch feature map only (no multi-level fusion, no spatial
+    convolutions). Sits between the linear head (~trivial) and the upsampling decoder
+    (~9.4M parameters) in terms of model size and capacity.
+    """
+
+    def _build_decoder(self) -> nn.Module:
+        # hidden_channels=512 gives a moderate bottleneck for DINOv2-L (hidden_size=1024)
+        # This yields ~1.6M parameters, which is between the linear head and upsampling decoder
+        return MLPHead(in_channels=self.hidden_size,
+                       hidden_channels=512,
+                       n_output_channels=self.n_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        H, W = x.shape[-2:]
+
+        # Use only the final patch feature map — same as the upsampling decoder
+        feats = self.extract_patch_features(x)
+        logits = self.decoder(feats)
+
+        # Bilinear resize from patch resolution back to the full image resolution
+        return F.interpolate(logits,
+                             size=(H, W),
+                             mode="bilinear",
+                             align_corners=False)
+
+
+
+
+# Experiment 4: EoMT-DINOv2 (encoder-only)
 class DinoEoMT(nn.Module):
     """
     Wrapper around the Hugging Face EoMT semantic segmentation model built on a DINOv2-L backbone.
