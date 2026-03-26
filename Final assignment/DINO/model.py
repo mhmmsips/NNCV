@@ -307,14 +307,13 @@ class DinoMLPDecoder(DinoSegBase):
     """
     Lightweight pointwise MLP decoder on top of the fixed DINOv2 backbone.
 
-    Operates on the final patch feature map only (no multi-level fusion, no spatial
-    convolutions). Sits between the linear head (~trivial) and the upsampling decoder
-    (~9.4M parameters) in terms of model size and capacity.
+    Operates on the final patch feature map only (no multi-level fusion, no spatial convolutions). 
+    Sits between the linear head  and the upsampling decoder in terms of model size and capacity.
     """
 
     def _build_decoder(self) -> nn.Module:
         # hidden_channels=512 gives a moderate bottleneck for DINOv2-L (hidden_size=1024)
-        # This yields ~1.6M parameters, which is between the linear head and upsampling decoder
+        # This yields approx 1.6M parameters, which is between the linear head and upsampling decoder
         return MLPHead(in_channels=self.hidden_size,
                        hidden_channels=512,
                        n_output_channels=self.n_classes)
