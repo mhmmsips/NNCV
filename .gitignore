@@ -183,3 +183,8 @@ slurm*
 *.sif
 Final assignment/checkpoints/
 *.pt
+
+# EXTRA
+SKILL.md
+openai.yaml
+style-reference.md
