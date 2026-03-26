@@ -94,6 +94,13 @@ class Model(nn.Module):
 
         #NOTE: Look into FlashAttention when time allows it
         self.model.set_attn_implementation("sdpa")
+
+        # When num_register_tokens=0, Hugging Face still creates an empty trainable
+        # parameter with shape (1, 0, hidden_size). DDP can warn about that empty
+        # parameter during backward because it still gets assigned to a gradient
+        # bucket, even though it contains no values. Replacing it with a buffer keeps
+        # the forward pass identical, but removes the useless parameter from DDP.
+        self._replace_empty_register_tokens_with_buffer()
         
         self.backbone = self.model
 
@@ -147,6 +154,29 @@ class Model(nn.Module):
             raise ValueError(f"Expected a square DINOv2 patch grid, but got {num_patch_positions} patch positions")
 
         return patch_position_embeddings, (source_grid_side, source_grid_side)
+
+
+    def _replace_empty_register_tokens_with_buffer(self):
+        if self.model.config.num_register_tokens != 0:
+            return
+
+        register_tokens = self.model.embeddings.register_tokens
+
+        if not isinstance(register_tokens, nn.Parameter):
+            return
+
+        if register_tokens.shape[1] != 0:
+            raise ValueError(
+                "Expected zero register tokens, but the EoMT embedding parameter has a non-zero shape"
+            )
+
+        # Keep the same empty tensor for the forward pass, but store it as a buffer
+        # instead of a parameter so DDP does not try to bucket a zero-sized gradient.
+        empty_register_tokens = register_tokens.detach().clone()
+        del self.model.embeddings._parameters["register_tokens"]
+        self.model.embeddings.register_buffer("register_tokens",
+                                              empty_register_tokens,
+                                              persistent=False)
 
 
     def _map_dino_state_dict(self, dino_state_dict):
