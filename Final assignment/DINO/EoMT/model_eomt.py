@@ -101,6 +101,14 @@ class Model(nn.Module):
         # bucket, even though it contains no values. Replacing it with a buffer keeps
         # the forward pass identical, but removes the useless parameter from DDP.
         self._replace_empty_register_tokens_with_buffer()
+
+        # Hugging Face expands the CLS token (and register tokens, when present)
+        # across the batch with `.expand(...)`. That is mathematically fine, but in
+        # DDP it can produce gradient tensors whose strides do not match the bucket
+        # view strides, which is the warning you saw on Snellius. Replacing that
+        # expand-with-view path by repeat-with-real-copies is numerically equivalent
+        # here and removes the warning at the source.
+        self._patch_embedding_forward_for_ddp()
         
         self.backbone = self.model
 
@@ -177,6 +185,28 @@ class Model(nn.Module):
         self.model.embeddings.register_buffer("register_tokens",
                                               empty_register_tokens,
                                               persistent=False)
+
+    def _patch_embedding_forward_for_ddp(self):
+        embeddings_module = self.model.embeddings
+
+        def forward(pixel_values: torch.Tensor) -> torch.Tensor:
+            batch_size, _, _, _ = pixel_values.shape
+            target_dtype = embeddings_module.patch_embeddings.projection.weight.dtype
+
+            patch_embeddings = embeddings_module.patch_embeddings(pixel_values.to(dtype=target_dtype))
+            position_embeddings = embeddings_module.position_embeddings(embeddings_module.position_ids)
+
+            # NOTE: `repeat(...)` avoids the grad-stride warning that DDP can emit
+            # for singleton prefix tokens expanded across the batch.
+            cls_tokens = embeddings_module.cls_token.repeat(batch_size, 1, 1)
+            register_tokens = embeddings_module.register_tokens.repeat(batch_size, 1, 1)
+
+            embeddings = patch_embeddings + position_embeddings
+            embeddings = torch.cat([cls_tokens, register_tokens, embeddings], dim=1)
+            embeddings = embeddings_module.dropout(embeddings)
+            return embeddings
+
+        embeddings_module.forward = forward
 
 
     def _map_dino_state_dict(self, dino_state_dict):
@@ -333,13 +363,13 @@ class Model(nn.Module):
 
         return [(class_queries_logits, masks_queries_logits)]
 
-    def _query_predictions_to_dense_logits(self,
-                                           class_queries_logits: torch.Tensor,
-                                           masks_queries_logits: torch.Tensor,
-                                           padded_height: int,
-                                           padded_width: int) -> torch.Tensor:
-        # Convert the EoMT query predictions to dense semantic logits using the
-        # MaskFormer-style class-probability × mask-probability combination.
+    def _query_predictions_to_dense_probabilities(self,
+                                                  class_queries_logits: torch.Tensor,
+                                                  masks_queries_logits: torch.Tensor,
+                                                  padded_height: int,
+                                                  padded_width: int) -> torch.Tensor:
+        # Build dense semantic scores with the standard MaskFormer-style
+        # class-probability x mask-probability combination.
         masks_full_resolution = F.interpolate(masks_queries_logits,
                                               size=(padded_height, padded_width),
                                               mode="bilinear",
@@ -378,19 +408,32 @@ class Model(nn.Module):
         if len(prediction_pairs) == 0:
             raise ValueError("EoMT did not return any query predictions")
 
-        dense_logits_sum = None
+        dense_probabilities_sum = None
         for class_queries_logits, masks_queries_logits in prediction_pairs:
-            dense_logits = self._query_predictions_to_dense_logits(
+            dense_probabilities = self._query_predictions_to_dense_probabilities(
                 class_queries_logits=class_queries_logits,
                 masks_queries_logits=masks_queries_logits,
                 padded_height=padded_height,
                 padded_width=padded_width,
             )
 
-            if dense_logits_sum is None:
-                dense_logits_sum = dense_logits
+            if dense_probabilities_sum is None:
+                dense_probabilities_sum = dense_probabilities
             else:
-                dense_logits_sum = dense_logits_sum + dense_logits
+                dense_probabilities_sum = dense_probabilities_sum + dense_probabilities
 
-        dense_logits = dense_logits_sum / len(prediction_pairs) #type:ignore
+        dense_probabilities = dense_probabilities_sum / len(prediction_pairs) #type:ignore
+
+        # The query-combination formula above is the usual semantic
+        # post-processing step, so it produces positive class scores rather than
+        # true logits. The training script, however, uses loss functions that
+        # expect logit-like inputs and internally apply softmax. Convert the
+        # dense scores to a proper per-pixel class distribution first, then take
+        # the log so CrossEntropyLoss / Dice / boundary losses all see a
+        # consistent signal.
+        probability_normalizer = dense_probabilities.sum(dim=1,
+                                                         keepdim=True).clamp_min(1e-6)
+        dense_probabilities = dense_probabilities / probability_normalizer
+        dense_logits = dense_probabilities.clamp_min(1e-6).log()
+
         return dense_logits[..., :original_height, :original_width]
