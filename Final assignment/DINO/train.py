@@ -40,7 +40,6 @@ from torchvision.transforms.v2 import (
     RandomApply,
 )
 import math
-from model_eomt import Model
 
 
 # Mapping class IDs to train IDs
@@ -599,15 +598,15 @@ def get_args_parser():
 
     parser = ArgumentParser("Training script for DINO-based semantic segmentation")
     parser.add_argument("--data-dir", type=str, default="./data/cityscapes", help="Path to the training data")
-    parser.add_argument("--batch-size", type=int, default=1, help="Training batch size")
+    parser.add_argument("--batch-size", type=int, default=64, help="Training batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--num-workers", type=int, default=10, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument("--experiment-id", type=str, default="eomt-cityscapes", help="Experiment ID for Weights & Biases")
-    parser.add_argument("--gradient-accumulation-steps", type=int, default=8, help="Number of gradient accumulation steps")
+    parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of gradient accumulation steps")
     parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"], help="Mixed precision mode")
-    parser.add_argument("--decoder", type=str, default="linear", choices=["linear", "upsample", "EoMT"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
+    parser.add_argument("--decoder", type=str, default="linear", choices=["linear", "upsample", "mlp", "EoMT"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
 
     return parser
 
@@ -723,11 +722,33 @@ def main(args):
     )
 
     # Define the model
-    model = Model(n_classes=19)
+    from model import DinoEoMT, DinoLinearDecoder, DinoMLPDecoder, DinoUpsamplingDecoder
+
+    if args.decoder == "linear":
+        model = DinoLinearDecoder(n_classes=19)
+    elif args.decoder == "upsample":
+        model = DinoUpsamplingDecoder(n_classes=19)
+    elif args.decoder == "mlp":
+        model = DinoMLPDecoder(n_classes=19)
+    elif args.decoder == "EoMT":
+        model = DinoEoMT(n_classes=19)
+    else:
+        raise ValueError("Unknown decoder")
+
     model = model.to(device)
     
-    # EoMT-L is trained end-to-end in this script, so all of its parameters stay trainable.
-    is_trainable_model = True
+    # For the plain DINOv2 models, freeze the entire backbone and train only the decoder head.
+    # EoMT is used here as a frozen pretrained baseline, so none of its parameters are updated.
+    if args.decoder == "EoMT":
+        for param in model.parameters():
+            param.requires_grad = False
+    else:
+        for param in model.backbone.parameters():
+            param.requires_grad = False
+        for param in model.decoder.parameters():
+            param.requires_grad = True
+
+    is_trainable_model = args.decoder != "EoMT"
     
     # Define the loss function
     # Experiment C: safety-critical rebalanced CE + Dice + boundary loss
