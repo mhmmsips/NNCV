@@ -297,14 +297,12 @@ def compute_boundary_iou_metrics(intersections: torch.Tensor,
 weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                               drop_width=2,
                                               drop_length=20,
-                                              drop_angle=(-20, 20),
                                               blur_value=2, #NOTE: slight blur on the drops to make them look more natural
                                               p=1.0),
                                  A.RandomSnow(snow_point_range=(0.1, 0.3),
                                               brightness_coeff=2.0, #NOTE: snow pixels are noticeably brighter than the scene
                                               p=1.0),
                                  A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5), #NOTE: sun is always in the upper half of the image
-                                                  angle_range=(-45, 45),
                                                   num_flare_circles_range=(6, 10),
                                                   src_radius=300,
                                                   p=1.0),

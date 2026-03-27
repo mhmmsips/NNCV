@@ -37,7 +37,7 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 # Data directory; same default as train.py
-data_dir = "./data/cityscapes"
+data_dir = "../data/cityscapes"
 
 # SYNTHIA reference images for FDA style transfer; same default as train.py
 synthia_dir = "../data/synthia"

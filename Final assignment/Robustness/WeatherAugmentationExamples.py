@@ -35,7 +35,7 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 # Data directory; same default as train.py
-data_dir = "./data/cityscapes"
+data_dir = "../data/cityscapes"
 
 # Padding to make both spatial dims divisible by 14 for DINOv2-L/14
 image_padding = (5, 6, 5, 6) # left, top, right, bottom
@@ -56,7 +56,6 @@ for d in [dir_weather_train, dir_weather_val, dir_full_train, dir_full_val]:
 weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
                                            drop_width=2,
                                            drop_length=20,
-                                           drop_angle=(-20, 20),
                                            blur_value=2, # slight blur on the drops to look more natural
                                            p=1.0),
 
@@ -65,7 +64,6 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
                                             p=1.0),
 
                                A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5), # sun is always in the upper half
-                                                angle_range=(-45, 45),
                                                 p=1.0),
 
                                A.RandomShadow(shadow_roi=(0.0, 0.5, 1.0, 1.0),
@@ -83,7 +81,6 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
 weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
                                           drop_width=2,
                                           drop_length=20,
-                                          drop_angle=(-20, 20),
                                           blur_value=2,
                                           p=1.0),
 
@@ -92,7 +89,6 @@ weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
                                            p=1.0),
 
                               A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5),
-                                               angle_range=(-45, 45),
                                                p=1.0),
 
                               A.RandomShadow(shadow_roi=(0.0, 0.5, 1.0, 1.0),

@@ -38,7 +38,7 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 # Data directory; same default as train.py
-data_dir = "./data/cityscapes"
+data_dir = "../data/cityscapes"
 
 # SYNTHIA reference images for FDA style transfer; same default as train.py
 synthia_dir = "../data/synthia"
@@ -81,7 +81,6 @@ fda_aug = A.FDA(reference_images=synthia_image_paths,
 weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
                                            drop_width=2,
                                            drop_length=20,
-                                           drop_angle=(-20, 20),
                                            blur_value=2, # slight blur on the drops to look more natural
                                            p=1.0),
 
@@ -90,7 +89,6 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
                                             p=1.0),
 
                                A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5), # sun is always in the upper half
-                                                angle_range=(-45, 45),
                                                 num_flare_circles_range=(6, 10),
                                                 src_radius=300,
                                                 p=1.0),
@@ -110,7 +108,6 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
 weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
                                           drop_width=2,
                                           drop_length=20,
-                                          drop_angle=(-20, 20),
                                           blur_value=2,
                                           p=1.0),
 
@@ -119,7 +116,6 @@ weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
                                            p=1.0),
 
                               A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5),
-                                               angle_range=(-45, 45),
                                                num_flare_circles_range=(6, 10),
                                                src_radius=300,
                                                p=1.0),
