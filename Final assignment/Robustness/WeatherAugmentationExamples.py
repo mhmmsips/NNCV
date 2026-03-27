@@ -67,7 +67,6 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
                                                 p=1.0),
 
                                A.RandomShadow(shadow_roi=(0.0, 0.5, 1.0, 1.0),
-                                              nb_shadows=2,
                                               shadow_dimension=5,
                                               p=1.0),
 
