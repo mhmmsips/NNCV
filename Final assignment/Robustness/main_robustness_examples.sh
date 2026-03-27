@@ -1,3 +1,4 @@
 cd Robustness
 
 python3 WeatherAugmentationExamples.py
+python3 FourierDomainAdaptationExamples.py
