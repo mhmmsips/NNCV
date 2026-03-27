@@ -110,7 +110,7 @@ weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
 # Torchvision transforms; same as train.py
 imagenet_normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
-# Training transform — only converts to tensor and pads; no jitter, blur, or normalization here
+# Training transform; only converts to tensor and pads; no jitter, blur, or normalization here
 # The correct augmentation order is: WA --> ColorJitter --> GaussianBlur --> flip --> normalize, so jitter and blur must run after albumentations, not before
 train_img_transform = Compose([ToImage(),
                                 ToDtype(torch.float32, scale=True),
