@@ -79,13 +79,13 @@ fda_aug = A.FDA(reference_images=synthia_image_paths,
 
 # Weather augmentation block; p=1.0 on the outer OneOf means one effect is always applied (100% for the visualisation export)
 weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
-                                           drop_width=2,
-                                           drop_length=20,
-                                           blur_value=2, # slight blur on the drops to look more natural
+                                           drop_width=1,
+                                           blur_value=5,
+                                           brightness_coefficient=0.8,
                                            p=1.0),
 
-                               A.RandomSnow(snow_point_range=(0.1, 0.3),
-                                            brightness_coeff=2.0, # snow pixels are noticeably brighter than the scene
+                               A.RandomSnow(snow_point_range=(0.2, 0.4),
+                                            brightness_coeff=2.5,
                                             p=1.0),
 
                                A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5), # sun is always in the upper half
@@ -106,13 +106,13 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
 
 # Identical block with p=0.5; mirrors train.py exactly for the "full pipeline" exports
 weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
-                                          drop_width=2,
-                                          drop_length=20,
-                                          blur_value=2,
+                                          drop_width=1,
+                                          blur_value=5,
+                                          brightness_coefficient=0.8,
                                           p=1.0),
 
-                              A.RandomSnow(snow_point_range=(0.1, 0.3),
-                                           brightness_coeff=2.0,
+                              A.RandomSnow(snow_point_range=(0.2, 0.4),
+                                           brightness_coeff=2.5,
                                            p=1.0),
 
                               A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5),

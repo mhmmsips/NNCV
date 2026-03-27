@@ -295,12 +295,12 @@ def compute_boundary_iou_metrics(intersections: torch.Tensor,
 # Weather augmentations applied on the image only (mask is unaffected by rain, fog, etc.)
 # A weather augmentation is applied to about 50% of training images, and when it is applied, exactly one weather effect is chosen uniformly from the five listed effects
 weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
-                                              drop_width=2,
-                                              drop_length=20,
-                                              blur_value=2, #NOTE: slight blur on the drops to make them look more natural
+                                              drop_width=1,
+                                              blur_value=5,
+                                              brightness_coefficient=0.8,
                                               p=1.0),
-                                 A.RandomSnow(snow_point_range=(0.1, 0.3),
-                                              brightness_coeff=2.0, #NOTE: snow pixels are noticeably brighter than the scene
+                                 A.RandomSnow(snow_point_range=(0.2, 0.4),
+                                              brightness_coeff=2.5,
                                               p=1.0),
                                  A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5), #NOTE: sun is always in the upper half of the image
                                                   num_flare_circles_range=(6, 10),
