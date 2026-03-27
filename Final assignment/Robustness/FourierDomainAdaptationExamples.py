@@ -69,8 +69,7 @@ if len(synthia_image_paths) == 0:
 
 print(f"Found {len(synthia_image_paths)} SYNTHIA reference images")
 
-# FDA transform applied to 100% of images
-# beta_limit=(0.0, 0.05): the paper shows beta <= 0.05 produces clean style transfer without visible artefacts.
+# FDA transform applied to 100% of images beta_limit=(0.0, 0.05): the paper shows beta <= 0.05 produces clean style transfer without visible artefacts
 # Sampling uniformly from the full range gives diversity across subtle to moderate adaptation strengths; the model sees a range of domain shifts during training.
 fda_aug = A.FDA(reference_images=synthia_image_paths,
                 beta_limit=(0.0, 0.05),
