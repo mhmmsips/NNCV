@@ -2,10 +2,10 @@
 Visualise the effect of weather augmentations on Cityscapes images.
 
 Four export directories are created inside the Robustness folder:
-  WeatherAugmentedTrainingExamples  ; 50 training images, weather aug at 100%
+  WeatherAugmentedTrainingExamples ; 50 training images, weather aug at 100%
   WeatherAugmentedValidationExamples; the 2 W&B validation images, each augmented 25 times, weather at 100%
-  FullyAugmentedTrainingExamples    ; 50 training images, full pipeline (50% weather + flips/jitter/blur)
-  FullyAugmentedValidationExamples  ; the 2 W&B validation images, each augmented 25 times, full pipeline
+  FullyAugmentedTrainingExamples ; 50 training images, full pipeline (50% weather + flips/jitter/blur)
+  FullyAugmentedValidationExamples ; the 2 W&B validation images, each augmented 25 times, full pipeline
 
 Seed 8 is used throughout for reproducibility.
 """
@@ -124,8 +124,7 @@ val_img_transform = Compose([ToImage(),
                               Pad(padding=image_padding, fill=0),
                               Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
 
-# Validation transform without normalize; used for the images we want to weather-augment,
-# so albumentations receives a uint8 image before the pixel range is shifted by normalization
+# Validation transform without normalize; used for the images we want to weather-augment, so albumentations receives a uint8 image before the pixel range is shifted by normalization
 val_img_transform_no_norm = Compose([ToImage(),
                                      ToDtype(torch.float32, scale=True),
                                      Pad(padding=image_padding, fill=0)])
@@ -237,7 +236,7 @@ rng = random.Random(seed)
 train_indices = rng.sample(range(len(train_ds)), 50)
 
 for export_idx, ds_idx in enumerate(train_indices):
-    img, _ = train_ds[ds_idx]  # float32 CHW, already through ColorJitter/GaussianBlur/Pad
+    img, _ = train_ds[ds_idx] # float32 CHW, already through ColorJitter/GaussianBlur/Pad
 
     img_augmented = apply_weather_only(img, weather_aug_always)
 
@@ -258,7 +257,7 @@ print("Exporting WeatherAugmentedValidationExamples...")
 val_ds_no_norm = load_val_dataset_no_norm()
 
 for val_image_idx in range(2):
-    img, _ = val_ds_no_norm[val_image_idx]  # float32 CHW, padded, not yet normalized
+    img, _ = val_ds_no_norm[val_image_idx] # float32 CHW, padded, not yet normalized
 
     for rep in range(25):
         img_augmented = apply_weather_only(img, weather_aug_always)

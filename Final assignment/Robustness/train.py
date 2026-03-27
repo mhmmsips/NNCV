@@ -318,18 +318,71 @@ weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                 p=0.5) # Apply one weather effect to approx 50% of training images
 
 
+def build_fda_transform(synthia_dir: str) -> A.FDA:
+    """Build an FDA (Fourier Domain Adaptation) transform from a directory of SYNTHIA reference images.
+
+    Implements the approach from:
+        "FDA: Fourier Domain Adaptation for Semantic Segmentation"
+        Yanchao Yang and Stefano Soatto, CVPR 2020.
+
+    The idea: swap the low-frequency amplitude spectrum of a training image with that of a
+    randomly sampled target-domain (SYNTHIA) image, while keeping the phase intact.
+    This transfers the global colour/lighting style of the target domain without altering
+    the scene structure, making the model more robust to domain shifts at test time.
+
+    beta_limit=(0.0, 0.05): the paper shows β ≤ 0.05 produces clean style transfer without
+    visible artefacts. Sampling uniformly from the full range gives the model diversity across
+    subtle to moderate adaptation strengths during training.
+    """
+    # Collect all image files from the synthia directory recursively
+    synthia_image_paths = []
+    for root, _, files in os.walk(synthia_dir):
+        for fname in files:
+            if fname.lower().endswith((".png", ".jpg", ".jpeg")):
+                synthia_image_paths.append(os.path.join(root, fname))
+
+    if len(synthia_image_paths) == 0:
+        raise ValueError(f"No images found in synthia directory: {synthia_dir}")
+
+    return A.FDA(reference_images=synthia_image_paths,
+                 beta_limit=(0.0, 0.05),
+                 read_fn=lambda x: x, # paths are passed as strings; albumentations reads them internally
+                 p=1.0) # Apply FDA to 100% of training images
+
+
 # Define a class to augment the Cityscapes dataset with random horizontal flips and do the other augmentations
 class AugmentedCityscapes(torch.utils.data.Dataset):
-    def __init__(self, dataset, augment=True):
+    """Wraps a Cityscapes dataset and applies the configured augmentation pipeline.
+
+    augmentation_mode controls which domain-robustness augmentation is applied:
+        "wa" --> weather augmentations only (rain, snow, fog, etc.)
+        "fda" --> Fourier Domain Adaptation only (SYNTHIA style transfer)
+        "both" --> FDA first, then weather augmentations (not yet used; placeholder for later)
+        None --> no domain-robustness augmentation (validation mode)
+
+    Geometric augmentations (horizontal flip) and photometric augmentations (ColorJitter, GaussianBlur) are always applied when augment=True, regardless of the mode.
+    """
+
+    def __init__(self,
+                 dataset,
+                 augment: bool = True,
+                 augmentation_mode: str = "wa",
+                 fda_transform: A.FDA | None = None):
+        
+        # Sanity check: fda_transform must be provided when the mode requires it
+        if augmentation_mode in ("fda", "both") and fda_transform is None:
+            raise ValueError(f"augmentation_mode='{augmentation_mode}' requires fda_transform to be set, but got None")
+
         self.dataset = dataset
         self.augment = augment
+        self.augmentation_mode = augmentation_mode
+        self.fda_transform = fda_transform  # A.FDA instance; only used when mode is "fda" or "both"
         self.joint_transform = RandomHorizontalFlip(p=0.5)
 
     def __len__(self):
         return len(self.dataset)
 
-    # ImageNet normalization applied after weather augmentation — kept here so weather augmentations
-    # can operate on uint8 pixel values before the mean/std shift changes the value range.
+    # ImageNet normalization applied after all pixel-level augmentations; kept here so those augmentations can operate on uint8 pixel values before the mean/std shift changes the value range.
     normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
     def __getitem__(self, idx):
@@ -337,13 +390,25 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
         if self.augment:
             img, mask = self.joint_transform(img, mask)
 
-            # Apply weather augmentations on the image only (mask labels are unaffected by weather conditions)
             # Albumentations expects uint8 HWC numpy arrays. At this point the image is a float32 CHW tensor scaled to [0, 1] (Normalize has not run yet)
             img_numpy = (img.permute(1, 2, 0).numpy() * 255).clip(0, 255).astype("uint8")
-            img_numpy = weather_augmentations(image=img_numpy)["image"]
+
+            if self.augmentation_mode == "wa":
+                # Apply weather augmentations on the image only (mask labels are unaffected by weather conditions)
+                img_numpy = weather_augmentations(image=img_numpy)["image"]
+
+            elif self.augmentation_mode == "fda":
+                # Apply Fourier Domain Adaptation: each image gets a freshly sampled SYNTHIA reference image, so the style varies across the full training set for maximum domain diversity
+                img_numpy = self.fda_transform(image=img_numpy)["image"] # type:ignore
+
+            elif self.augmentation_mode == "both":
+                # FDA first (global colour/style transfer), then weather on top (not yet wired up), kept here as a placeholder so adding it later only requires a main.sh change
+                img_numpy = self.fda_transform(image=img_numpy)["image"] # type:ignore
+                img_numpy = weather_augmentations(image=img_numpy)["image"]
+
             img = torch.from_numpy(img_numpy).permute(2, 0, 1).float() / 255.0
 
-            # Apply ImageNet normalization now that weather augmentation is done
+            # Apply ImageNet normalization now that all pixel-level augmentations are done
             img = self.normalize(img)
 
         return img, mask
@@ -648,6 +713,10 @@ def get_args_parser():
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of gradient accumulation steps")
     parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"], help="Mixed precision mode")
     parser.add_argument("--decoder", type=str, default="linear", choices=["linear", "upsample", "mlp", "EoMT"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
+    parser.add_argument("--augmentation", type=str, default="wa", choices=["wa", "fda", "both"],
+                        help="Domain-robustness augmentation strategy: 'wa' for weather augmentations, 'fda' for Fourier Domain Adaptation, 'both' for FDA followed by weather augmentations")
+    parser.add_argument("--synthia-dir", type=str, default="./data/synthia",
+                        help="Path to the SYNTHIA reference image directory, used as target domain for FDA style transfer")
 
     return parser
 
@@ -733,8 +802,17 @@ def main(args):
                                transform=val_img_transform,
                                target_transform=val_target_transform)
 
+    # Build the FDA transform upfront if needed, so the SYNTHIA image list is collected once rather than on every worker call
+    # NOTE: this also makes the random sampling reproducible
+    fda_transform = None
+    if args.augmentation in ("fda", "both"):
+        fda_transform = build_fda_transform(args.synthia_dir)
+
     # Wrap datasets with augmentation (training only)
-    train_dataset = AugmentedCityscapes(train_dataset, augment=True)
+    train_dataset = AugmentedCityscapes(train_dataset,
+                                        augment=True,
+                                        augmentation_mode=args.augmentation,
+                                        fda_transform=fda_transform)
     valid_dataset = AugmentedCityscapes(valid_dataset, augment=False)
 
     # Seed the data loaders as well, so shuffling and worker-side randomness stay reproducible

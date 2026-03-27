@@ -7,4 +7,4 @@
 #SBATCH --time=00:30:00
 
 
-srun apptainer exec --nv --env-file .env container_with_accelerate.sif /bin/bash main_weather_examples.sh
+srun apptainer exec --nv --env-file .env container_with_accelerate.sif /bin/bash main_robustness_examples.sh
