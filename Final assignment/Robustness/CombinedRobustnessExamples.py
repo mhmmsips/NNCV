@@ -139,7 +139,7 @@ weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
 # Torchvision transforms; same as train.py
 imagenet_normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
-# Training transform — only converts to tensor and pads; no jitter, blur, or normalization here
+# Training transform; only converts to tensor and pads; no jitter, blur, or normalization here
 # The correct augmentation order is: FDA --> WA --> ColorJitter --> GaussianBlur --> flip --> normalize, so jitter and blur must run after albumentations, not before
 train_img_transform = Compose([ToImage(),
                                 ToDtype(torch.float32, scale=True),
@@ -178,11 +178,11 @@ def apply_combined_only(img_tensor: torch.Tensor,
     The image is NOT normalized; output lives in [0, 255] so it can be saved
     directly as a PNG without needing to undo ImageNet normalization.
     """
-    # FDA first — adapts the global colour/style to the SYNTHIA target domain
+    # FDA first; adapts the global colour/style to the SYNTHIA target domain
     img_numpy = tensor_to_uint8_numpy(img_tensor)
     img_numpy = fda_aug(image=img_numpy)["image"]
 
-    # WA second — layers weather effects on top of the already domain-adapted image
+    # WA second; layers weather effects on top of the already domain-adapted image
     img_numpy = weather_aug(image=img_numpy)["image"]
 
     # Return uint8 CHW for easy saving with PIL
