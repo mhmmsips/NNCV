@@ -350,17 +350,26 @@ def build_fda_transform(synthia_dir: str) -> A.FDA:
                  p=1.0) # Apply FDA to 100% of training images
 
 
-# Define a class to augment the Cityscapes dataset with random horizontal flips and do the other augmentations
+# Define a class to augment the Cityscapes dataset with the full augmentation pipeline
 class AugmentedCityscapes(torch.utils.data.Dataset):
     """Wraps a Cityscapes dataset and applies the configured augmentation pipeline.
 
-    augmentation_mode controls which domain-robustness augmentation is applied:
-        "wa" --> weather augmentations only (rain, snow, fog, etc.)
-        "fda" --> Fourier Domain Adaptation only (SYNTHIA style transfer)
-        "both" --> FDA first, then weather augmentations (not yet used; placeholder for later)
-        None --> no domain-robustness augmentation (validation mode)
+    The full augmentation order is:
+        [FDA]  →  [WA]  →  ColorJitter  →  GaussianBlur  →  RandomHorizontalFlip  →  Normalize
 
-    Geometric augmentations (horizontal flip) and photometric augmentations (ColorJitter, GaussianBlur) are always applied when augment=True, regardless of the mode.
+    This ordering is intentional:
+      - FDA and WA operate on uint8 pixel values and should see a "clean" image first,
+        so ColorJitter and blur do not interfere with the Fourier spectrum or the weather effects.
+      - ColorJitter and GaussianBlur run after the domain augmentations to add photometric
+        and focus-level variation on top of the already-adapted image.
+      - The flip comes last among the stochastic transforms so mask and image stay in sync.
+      - Normalize always goes last; albumentations cannot handle normalized float tensors.
+
+    augmentation_mode controls which domain-robustness augmentations are applied:
+        "wa"   — weather augmentations only (rain, snow, fog, etc.)
+        "fda"  — Fourier Domain Adaptation only (SYNTHIA style transfer)
+        "both" — FDA first, then WA on top
+        None   — no domain-robustness augmentation (validation mode)
     """
 
     def __init__(self,
@@ -368,7 +377,7 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
                  augment: bool = True,
                  augmentation_mode: str = "wa",
                  fda_transform: A.FDA | None = None):
-        
+
         # Sanity check: fda_transform must be provided when the mode requires it
         if augmentation_mode in ("fda", "both") and fda_transform is None:
             raise ValueError(f"augmentation_mode='{augmentation_mode}' requires fda_transform to be set, but got None")
@@ -377,38 +386,51 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
         self.augment = augment
         self.augmentation_mode = augmentation_mode
         self.fda_transform = fda_transform  # A.FDA instance; only used when mode is "fda" or "both"
-        self.joint_transform = RandomHorizontalFlip(p=0.5)
+
+        # Photometric and geometric transforms applied after albumentations augmentations
+        self.color_jitter = ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1)
+        self.gaussian_blur = RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3)
+        self.joint_flip = RandomHorizontalFlip(p=0.5)
 
     def __len__(self):
         return len(self.dataset)
 
-    # ImageNet normalization applied after all pixel-level augmentations; kept here so those augmentations can operate on uint8 pixel values before the mean/std shift changes the value range.
+    # ImageNet normalization applied last, after all augmentations are done
     normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
     def __getitem__(self, idx):
         img, mask = self.dataset[idx]
         if self.augment:
-            img, mask = self.joint_transform(img, mask)
-
-            # Albumentations expects uint8 HWC numpy arrays. At this point the image is a float32 CHW tensor scaled to [0, 1] (Normalize has not run yet)
+            # Albumentations expects uint8 HWC numpy arrays. At this point the image is a float32 CHW
+            # tensor scaled to [0, 1] — no jitter or blur has been applied yet, which is intentional so
+            # that FDA and WA operate on a clean image before any photometric perturbations are added.
             img_numpy = (img.permute(1, 2, 0).numpy() * 255).clip(0, 255).astype("uint8")
 
             if self.augmentation_mode == "wa":
-                # Apply weather augmentations on the image only (mask labels are unaffected by weather conditions)
+                # Weather augmentations only — mask labels are unaffected by weather conditions
                 img_numpy = weather_augmentations(image=img_numpy)["image"]
 
             elif self.augmentation_mode == "fda":
-                # Apply Fourier Domain Adaptation: each image gets a freshly sampled SYNTHIA reference image, so the style varies across the full training set for maximum domain diversity
-                img_numpy = self.fda_transform(image=img_numpy)["image"] # type:ignore
+                # FDA only — each image gets a freshly sampled SYNTHIA reference image, so the style
+                # varies across the full training set for maximum domain diversity
+                img_numpy = self.fda_transform(image=img_numpy)["image"]  # type: ignore
 
             elif self.augmentation_mode == "both":
-                # FDA first (global colour/style transfer), then weather on top (not yet wired up), kept here as a placeholder so adding it later only requires a main.sh change
-                img_numpy = self.fda_transform(image=img_numpy)["image"] # type:ignore
+                # FDA first (global colour/style transfer from SYNTHIA), then WA on top (scene-level
+                # weather effects). This order ensures the weather is layered onto the already
+                # domain-adapted image, which is the most realistic simulation of the target scenario.
+                img_numpy = self.fda_transform(image=img_numpy)["image"]  # type: ignore
                 img_numpy = weather_augmentations(image=img_numpy)["image"]
 
+            # Convert back to float32 CHW tensor in [0, 1] for torchvision transforms
             img = torch.from_numpy(img_numpy).permute(2, 0, 1).float() / 255.0
 
-            # Apply ImageNet normalization now that all pixel-level augmentations are done
+            # Apply photometric and geometric augmentations after the domain augmentations
+            img = self.color_jitter(img)
+            img = self.gaussian_blur(img)
+            img, mask = self.joint_flip(img, mask)
+
+            # Normalize last — all pixel-level augmentations must be complete before this
             img = self.normalize(img)
 
         return img, mask
@@ -753,14 +775,14 @@ def main(args):
     # Pad to 1036x2058 so both spatial dimensions become divisible by 14 and no border pixels are dropped by the patch embedding.
     image_padding = (5, 6, 5, 6) # left, top, right, bottom
 
-    # Training transform (with augmentations)
-    # NOTE: Normalize is intentionally left out here — it is applied inside AugmentedCityscapes after the
-    # weather augmentations, which need to operate on uint8 pixel values before normalization shifts the range.
+    # Training transform — only converts to tensor and pads; no jitter, blur or normalization here.
+    # ColorJitter, GaussianBlur, the horizontal flip, and Normalize are all applied inside
+    # AugmentedCityscapes.__getitem__ *after* the albumentations augmentations (FDA / WA), so that
+    # the pixel-level albumentations operate on a clean, un-jittered uint8 image.
+    # The required augmentation order is: [FDA] → [WA] → ColorJitter → GaussianBlur → flip → normalize
     train_img_transform = Compose([
         ToImage(),
         ToDtype(torch.float32, scale=True),
-        ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
-        RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
         Pad(padding=image_padding, fill=0),
     ])
 

@@ -1,15 +1,13 @@
 """
 Visualise the effect of Fourier Domain Adaptation (FDA) on Cityscapes images.
 
-Implements the approach from:
-    "FDA: Fourier Domain Adaptation for Semantic Segmentation"
-    Yanchao Yang and Stefano Soatto, CVPR 2020.
+Reference: "FDA: Fourier Domain Adaptation for Semantic Segmentation", Yang & Soatto, CVPR 2020.
 
 Four export directories are created inside the Robustness folder:
-  FDATrainingExamples ; 50 training images, FDA at 100% (beta sampled from (0.0, 0.05))
-  FDAValidationExamples ; the 2 W&B validation images, each augmented 25 times, FDA at 100%
-  FullyAugmentedFDATrainingExamples ; 50 training images, full pipeline (FDA + flips/jitter/blur)
-  FullyAugmentedFDAValidationExamples ; the 2 W&B validation images, each augmented 25 times, full pipeline
+  FDATrainingExamples; 50 training images, FDA at 100% (beta sampled from (0.0, 0.05))
+  FDAValidationExamples; the 2 W&B validation images, each augmented 25 times, FDA at 100%
+  FullyAugmentedFDATrainingExamples; 50 training images, full pipeline (FDA + flips/jitter/blur)
+  FullyAugmentedFDAValidationExamples; the 2 W&B validation images, each augmented 25 times, full pipeline
 
 Seed 8 is used throughout for reproducibility.
 """
@@ -45,7 +43,7 @@ data_dir = "./data/cityscapes"
 synthia_dir = "./data/synthia"
 
 # Padding to make both spatial dims divisible by 14 for DINOv2-L/14
-image_padding = (5, 6, 5, 6)  # left, top, right, bottom
+image_padding = (5, 6, 5, 6) # left, top, right, bottom
 
 # Output directories; all siblings of this script inside the Robustness folder
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -76,19 +74,17 @@ print(f"Found {len(synthia_image_paths)} SYNTHIA reference images")
 # Sampling uniformly from the full range gives diversity across subtle to moderate adaptation strengths; the model sees a range of domain shifts during training.
 fda_aug = A.FDA(reference_images=synthia_image_paths,
                 beta_limit=(0.0, 0.05),
-                read_fn=lambda x: x,  # paths passed as strings; albumentations reads them internally
+                read_fn=lambda x: x, # paths passed as strings; albumentations reads them internally
                 p=1.0)
 
 
 # Torchvision transforms; same as train.py
 imagenet_normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
-# Training transform: ColorJitter + optional GaussianBlur + padding
-# NOTE: Normalize is intentionally absent here; it runs after FDA, same as train.py
+# Training transform — only converts to tensor and pads; no jitter, blur, or normalization here
+# The correct augmentation order is: FDA --> ColorJitter --> GaussianBlur --> flip --> normalize, so jitter and blur must run after albumentations, not before
 train_img_transform = Compose([ToImage(),
                                 ToDtype(torch.float32, scale=True),
-                                ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
-                                RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
                                 Pad(padding=image_padding, fill=0)])
 
 # Validation transform without normalize; albumentations needs uint8 before normalization shifts the range
@@ -96,6 +92,9 @@ val_img_transform_no_norm = Compose([ToImage(),
                                      ToDtype(torch.float32, scale=True),
                                      Pad(padding=image_padding, fill=0)])
 
+# Photometric and geometric transforms applied after albumentations augmentations
+color_jitter = ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1)
+gaussian_blur = RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3)
 joint_flip = RandomHorizontalFlip(p=0.5)
 
 # Shared mask transform for both train and val datasets
@@ -128,20 +127,22 @@ def apply_fda_only(img_tensor: torch.Tensor) -> torch.Tensor:
 
 def apply_full_pipeline_fda(img_tensor: torch.Tensor,
                              mask_tensor: torch.Tensor) -> torch.Tensor:
-    """Apply the full training pipeline from train.py (with FDA instead of WA) and return a uint8 CHW tensor.
+    """Apply the full training pipeline from train.py (with FDA) and return a uint8 CHW tensor.
 
-    Pipeline: horizontal flip → FDA → normalize → de-normalize for saving
+    Pipeline: FDA --> ColorJitter --> GaussianBlur --> flip --> normalize --> de-normalize for saving
 
     The normalize/de-normalize round-trip keeps the augmentation order identical to train.py
     while producing a visually meaningful PNG (pixel values in [0, 255] rather than normalized).
     """
-    # Joint flip so image and mask stay in sync
-    img_tensor, mask_tensor = joint_flip(img_tensor, mask_tensor)
-
-    # Apply FDA on the pre-normalization uint8 image
+    # Apply FDA first, on the clean uint8 image
     img_numpy = tensor_to_uint8_numpy(img_tensor)
     img_numpy = fda_aug(image=img_numpy)["image"]
     img_tensor = uint8_numpy_to_tensor(img_numpy)
+
+    # Apply photometric augmentations after FDA, then the joint flip
+    img_tensor = color_jitter(img_tensor)
+    img_tensor = gaussian_blur(img_tensor)
+    img_tensor, mask_tensor = joint_flip(img_tensor, mask_tensor)
 
     # Normalize; same as AugmentedCityscapes.__getitem__ in train.py
     img_tensor = imagenet_normalize(img_tensor)
@@ -151,7 +152,7 @@ def apply_full_pipeline_fda(img_tensor: torch.Tensor,
     std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
     img_tensor = (img_tensor * std + mean).clamp(0, 1)
 
-    return (img_tensor * 255).byte()  # uint8 CHW
+    return (img_tensor * 255).byte() # uint8 CHW
 
 
 def save_tensor_as_png(img_chw: torch.Tensor, path: str):
@@ -200,7 +201,7 @@ rng = random.Random(seed)
 train_indices = rng.sample(range(len(train_ds)), 50)
 
 for export_idx, ds_idx in enumerate(train_indices):
-    img, _ = train_ds[ds_idx] # float32 CHW, already through ColorJitter/GaussianBlur/Pad
+    img, _ = train_ds[ds_idx] # float32 CHW, padded, not yet jittered or normalized
 
     img_augmented = apply_fda_only(img)
 
