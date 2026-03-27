@@ -14,7 +14,9 @@ Feel free to customize the script as needed for your use case.
 """
 import os
 import random
+import numpy as np
 from argparse import ArgumentParser
+from PIL import Image
 
 import wandb
 import torch
@@ -307,7 +309,6 @@ weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                                   src_radius=300,
                                                   p=1.0),
                                  A.RandomShadow(shadow_roi=(0.0, 0.5, 1.0, 1.0), #NOTE: shadows fall on the lower half (road surface)
-                                                nb_shadows=2,
                                                 shadow_dimension=5,
                                                 p=1.0),
                                  A.RandomFog(fog_coef_range=(0.2, 0.5), #NOTE: moderate fog: visible but not scene-destroying
@@ -316,7 +317,7 @@ weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                 p=0.5) # Apply one weather effect to approx 50% of training images
 
 
-def build_fda_transform(synthia_dir: str) -> A.FDA:
+def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     """Build an FDA (Fourier Domain Adaptation) transform from a directory of SYNTHIA reference images.
 
     Implements the approach from:
@@ -331,6 +332,9 @@ def build_fda_transform(synthia_dir: str) -> A.FDA:
     beta_limit=(0.0, 0.05): the paper shows β ≤ 0.05 produces clean style transfer without
     visible artefacts. Sampling uniformly from the full range gives the model diversity across
     subtle to moderate adaptation strengths during training.
+
+    Returns (transform, image_paths); the caller must pass a sampled reference image via
+    fda_metadata={"reference_images": [...]} as required by this albumentations version.
     """
     # Collect all image files from the synthia directory recursively
     synthia_image_paths = []
@@ -342,10 +346,7 @@ def build_fda_transform(synthia_dir: str) -> A.FDA:
     if len(synthia_image_paths) == 0:
         raise ValueError(f"No images found in synthia directory: {synthia_dir}")
 
-    return A.Compose([A.FDA(reference_images=synthia_image_paths,
-                           beta_limit=(0.0, 0.05),
-                           read_fn=lambda x: x, # paths are passed as strings; albumentations reads them internally
-                           p=1.0)]) # Apply FDA to 100% of training images
+    return A.FDA(beta_limit=(0.0, 0.05), p=1.0), synthia_image_paths
 
 
 # Define a class to augment the Cityscapes dataset with the full augmentation pipeline
@@ -374,7 +375,8 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
                  dataset,
                  augment: bool = True,
                  augmentation_mode: str = "wa",
-                 fda_transform: A.FDA | None = None):
+                 fda_transform: A.FDA | None = None,
+                 fda_reference_paths: list[str] | None = None):
 
         # Sanity check: fda_transform must be provided when the mode requires it
         if augmentation_mode in ("fda", "both") and fda_transform is None:
@@ -383,7 +385,8 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
         self.dataset = dataset
         self.augment = augment
         self.augmentation_mode = augmentation_mode
-        self.fda_transform = fda_transform  # A.FDA instance; only used when mode is "fda" or "both"
+        self.fda_transform = fda_transform # A.FDA instance; only used when mode is "fda" or "both"
+        self.fda_reference_paths = fda_reference_paths or []
 
         # Photometric and geometric transforms applied after albumentations augmentations
         self.color_jitter = ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1)
@@ -392,6 +395,12 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.dataset)
+
+    def _sample_fda_metadata(self) -> dict:
+        """Pick a random SYNTHIA image and return the fda_metadata dict FDA expects."""
+        path = random.choice(self.fda_reference_paths)
+        ref_img = np.array(Image.open(path).convert("RGB"))
+        return {"reference_images": [ref_img]}
 
     # ImageNet normalization applied last, after all augmentations are done
     normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
@@ -411,13 +420,13 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
             elif self.augmentation_mode == "fda":
                 # FDA only — each image gets a freshly sampled SYNTHIA reference image, so the style
                 # varies across the full training set for maximum domain diversity
-                img_numpy = self.fda_transform(image=img_numpy)["image"]  # type: ignore
+                img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"]  # type: ignore
 
             elif self.augmentation_mode == "both":
                 # FDA first (global colour/style transfer from SYNTHIA), then WA on top (scene-level
                 # weather effects). This order ensures the weather is layered onto the already
                 # domain-adapted image, which is the most realistic simulation of the target scenario.
-                img_numpy = self.fda_transform(image=img_numpy)["image"]  # type: ignore
+                img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"]  # type: ignore
                 img_numpy = weather_augmentations(image=img_numpy)["image"]
 
             # Convert back to float32 CHW tensor in [0, 1] for torchvision transforms
@@ -825,14 +834,16 @@ def main(args):
     # Build the FDA transform upfront if needed, so the SYNTHIA image list is collected once rather than on every worker call
     # NOTE: this also makes the random sampling reproducible
     fda_transform = None
+    fda_reference_paths = []
     if args.augmentation in ("fda", "both"):
-        fda_transform = build_fda_transform(args.synthia_dir)
+        fda_transform, fda_reference_paths = build_fda_transform(args.synthia_dir)
 
     # Wrap datasets with augmentation (training only)
     train_dataset = AugmentedCityscapes(train_dataset,
                                         augment=True,
                                         augmentation_mode=args.augmentation,
-                                        fda_transform=fda_transform)
+                                        fda_transform=fda_transform,
+                                        fda_reference_paths=fda_reference_paths)
     valid_dataset = AugmentedCityscapes(valid_dataset, augment=False)
 
     # Seed the data loaders as well, so shuffling and worker-side randomness stay reproducible
