@@ -307,7 +307,7 @@ weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                                   src_radius=300,
                                                   p=1.0),
                                  A.RandomShadow(shadow_roi=(0.0, 0.5, 1.0, 1.0), #NOTE: shadows fall on the lower half (road surface)
-                                                num_shadows_range=(1, 3),
+                                                nb_shadows=2,
                                                 shadow_dimension=5,
                                                 p=1.0),
                                  A.RandomFog(fog_coef_range=(0.2, 0.5), #NOTE: moderate fog: visible but not scene-destroying
@@ -342,10 +342,10 @@ def build_fda_transform(synthia_dir: str) -> A.FDA:
     if len(synthia_image_paths) == 0:
         raise ValueError(f"No images found in synthia directory: {synthia_dir}")
 
-    return A.FDA(reference_images=synthia_image_paths,
-                 beta_limit=(0.0, 0.05),
-                 read_fn=lambda x: x, # paths are passed as strings; albumentations reads them internally
-                 p=1.0) # Apply FDA to 100% of training images
+    return A.Compose([A.FDA(reference_images=synthia_image_paths,
+                           beta_limit=(0.0, 0.05),
+                           read_fn=lambda x: x, # paths are passed as strings; albumentations reads them internally
+                           p=1.0)]) # Apply FDA to 100% of training images
 
 
 # Define a class to augment the Cityscapes dataset with the full augmentation pipeline
