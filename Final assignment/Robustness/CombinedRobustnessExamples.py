@@ -73,14 +73,12 @@ print(f"Found {len(synthia_image_paths)} SYNTHIA reference images")
 # FDA transform applied to 100% of images; beta_limit=(0.0, 0.05): the paper shows beta <= 0.05 produces clean style transfer without visible artefacts.
 # Sampling uniformly from the full range gives diversity across subtle to moderate adaptation strengths; the model sees a range of domain shifts during training.
 # Reference image is sampled per call and passed via fda_metadata as required by this albumentations version
-fda_aug = A.FDA(beta_limit=(0.0, 0.05), p=1.0)
+fda_aug = A.Compose([A.FDA(beta_limit=(0.0, 0.05), p=1.0)])
 
 
-def sample_fda_metadata() -> dict:
-    """Pick a random SYNTHIA image and return it as the fda_metadata dict FDA expects."""
-    path = random.choice(synthia_image_paths)
-    ref_img = np.array(Image.open(path).convert("RGB"))
-    return {"reference_images": [ref_img]}
+def sample_synthia_image() -> np.ndarray:
+    """Load and return a random SYNTHIA reference image as a numpy array."""
+    return np.array(Image.open(random.choice(synthia_image_paths)).convert("RGB"))
 
 # Weather augmentation block; p=1.0 on the outer OneOf means one effect is always applied (100% for the visualisation export)
 weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
@@ -179,7 +177,7 @@ def apply_combined_only(img_tensor: torch.Tensor,
     """
     # FDA first; adapts the global colour/style to the SYNTHIA target domain
     img_numpy = tensor_to_uint8_numpy(img_tensor)
-    img_numpy = fda_aug(image=img_numpy, fda_metadata=sample_fda_metadata())["image"]
+    img_numpy = fda_aug(image=img_numpy, fda_metadata=[sample_synthia_image()])["image"]
 
     # WA second; layers weather effects on top of the already domain-adapted image
     img_numpy = weather_aug(image=img_numpy)["image"]
@@ -200,7 +198,7 @@ def apply_full_pipeline_combined(img_tensor: torch.Tensor,
     """
     # FDA first, on the clean uint8 image
     img_numpy = tensor_to_uint8_numpy(img_tensor)
-    img_numpy = fda_aug(image=img_numpy, fda_metadata=sample_fda_metadata())["image"]
+    img_numpy = fda_aug(image=img_numpy, fda_metadata=[sample_synthia_image()])["image"]
 
     # WA second, on top of the FDA-adapted image
     img_numpy = weather_aug(image=img_numpy)["image"]

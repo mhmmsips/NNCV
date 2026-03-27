@@ -334,7 +334,7 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     subtle to moderate adaptation strengths during training.
 
     Returns (transform, image_paths); the caller must pass a sampled reference image via
-    fda_metadata={"reference_images": [...]} as required by this albumentations version.
+    fda_metadata=[ref_img] (a list of numpy arrays) as required by this albumentations version.
     """
     # Collect all image files from the synthia directory recursively
     synthia_image_paths = []
@@ -346,7 +346,7 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     if len(synthia_image_paths) == 0:
         raise ValueError(f"No images found in synthia directory: {synthia_dir}")
 
-    return A.FDA(beta_limit=(0.0, 0.05), p=1.0), synthia_image_paths
+    return A.Compose([A.FDA(beta_limit=(0.0, 0.05), p=1.0)]), synthia_image_paths
 
 
 # Define a class to augment the Cityscapes dataset with the full augmentation pipeline
@@ -396,11 +396,9 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def _sample_fda_metadata(self) -> dict:
-        """Pick a random SYNTHIA image and return the fda_metadata dict FDA expects."""
-        path = random.choice(self.fda_reference_paths)
-        ref_img = np.array(Image.open(path).convert("RGB"))
-        return {"reference_images": [ref_img]}
+    def _sample_fda_metadata(self) -> list:
+        """Load and return a random SYNTHIA reference image as a list of numpy arrays."""
+        return [np.array(Image.open(random.choice(self.fda_reference_paths)).convert("RGB"))]
 
     # ImageNet normalization applied last, after all augmentations are done
     normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
