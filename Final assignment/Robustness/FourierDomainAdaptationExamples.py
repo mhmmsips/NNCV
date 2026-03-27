@@ -40,7 +40,7 @@ torch.manual_seed(seed)
 data_dir = "./data/cityscapes"
 
 # SYNTHIA reference images for FDA style transfer; same default as train.py
-synthia_dir = "./data/synthia"
+synthia_dir = "../data/synthia"
 
 # Padding to make both spatial dims divisible by 14 for DINOv2-L/14
 image_padding = (5, 6, 5, 6) # left, top, right, bottom

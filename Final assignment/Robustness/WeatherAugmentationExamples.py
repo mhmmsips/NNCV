@@ -54,8 +54,8 @@ for d in [dir_weather_train, dir_weather_val, dir_full_train, dir_full_val]:
 # Weather augmentation block; copied verbatim from train.py
 # p=1.0 on the outer OneOf means one effect is always applied (100% for the visualisation export)
 weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
-                                           drop_width=(1, 3),
-                                           drop_length=(15, 25),
+                                           drop_width=2,
+                                           drop_length=20,
                                            drop_angle=(-20, 20),
                                            blur_value=2, # slight blur on the drops to look more natural
                                            p=1.0),
@@ -81,8 +81,8 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
 
 # Identical block with p=0.5; mirrors train.py exactly for the "full pipeline" exports
 weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
-                                          drop_width=(1, 3),
-                                          drop_length=(15, 25),
+                                          drop_width=2,
+                                          drop_length=20,
                                           drop_angle=(-20, 20),
                                           blur_value=2,
                                           p=1.0),

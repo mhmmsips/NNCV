@@ -295,8 +295,8 @@ def compute_boundary_iou_metrics(intersections: torch.Tensor,
 # Weather augmentations applied on the image only (mask is unaffected by rain, fog, etc.)
 # A weather augmentation is applied to about 50% of training images, and when it is applied, exactly one weather effect is chosen uniformly from the five listed effects
 weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
-                                              drop_width=(1, 3),
-                                              drop_length=(15, 25),
+                                              drop_width=2,
+                                              drop_length=20,
                                               drop_angle=(-20, 20),
                                               blur_value=2, #NOTE: slight blur on the drops to make them look more natural
                                               p=1.0),
@@ -737,7 +737,7 @@ def get_args_parser():
     parser.add_argument("--decoder", type=str, default="linear", choices=["linear", "upsample", "mlp", "EoMT"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
     parser.add_argument("--augmentation", type=str, default="wa", choices=["wa", "fda", "both"],
                         help="Domain-robustness augmentation strategy: 'wa' for weather augmentations, 'fda' for Fourier Domain Adaptation, 'both' for FDA followed by weather augmentations")
-    parser.add_argument("--synthia-dir", type=str, default="./data/synthia",
+    parser.add_argument("--synthia-dir", type=str, default="../data/synthia",
                         help="Path to the SYNTHIA reference image directory, used as target domain for FDA style transfer")
 
     return parser

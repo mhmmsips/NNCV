@@ -41,7 +41,7 @@ torch.manual_seed(seed)
 data_dir = "./data/cityscapes"
 
 # SYNTHIA reference images for FDA style transfer; same default as train.py
-synthia_dir = "./data/synthia"
+synthia_dir = "../data/synthia"
 
 # Padding to make both spatial dims divisible by 14 for DINOv2-L/14
 image_padding = (5, 6, 5, 6) # left, top, right, bottom
@@ -79,8 +79,8 @@ fda_aug = A.FDA(reference_images=synthia_image_paths,
 
 # Weather augmentation block; p=1.0 on the outer OneOf means one effect is always applied (100% for the visualisation export)
 weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
-                                           drop_width=(1, 3),
-                                           drop_length=(15, 25),
+                                           drop_width=2,
+                                           drop_length=20,
                                            drop_angle=(-20, 20),
                                            blur_value=2, # slight blur on the drops to look more natural
                                            p=1.0),
@@ -108,8 +108,8 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
 
 # Identical block with p=0.5; mirrors train.py exactly for the "full pipeline" exports
 weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
-                                          drop_width=(1, 3),
-                                          drop_length=(15, 25),
+                                          drop_width=2,
+                                          drop_length=20,
                                           drop_angle=(-20, 20),
                                           blur_value=2,
                                           p=1.0),
