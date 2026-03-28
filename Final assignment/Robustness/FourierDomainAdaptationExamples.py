@@ -179,8 +179,7 @@ def load_train_dataset() -> Cityscapes:
 def load_val_dataset_no_norm() -> Cityscapes:
     """Load the Cityscapes validation split without the final normalize step.
 
-    Normalization is skipped so albumentations receives a uint8 image in the
-    original pixel range, before any normalization shift has been applied.
+    Normalization is skipped so albumentations receives a uint8 image in the original pixel range, before any normalization shift has been applied.
     """
     return Cityscapes(data_dir,
                       split="val",
@@ -210,7 +209,7 @@ for export_idx, ds_idx in enumerate(train_indices):
     fname = f"train_{export_idx:03d}_ds{ds_idx}.png"
     save_tensor_as_png(img_augmented, os.path.join(dir_fda_train, fname))
 
-print(f"  Saved {len(train_indices)} images to {dir_fda_train}")
+print(f"Saved {len(train_indices)} images to {dir_fda_train}")
 
 
 # %%
@@ -232,7 +231,7 @@ for val_image_idx in range(2):
         fname = f"val{val_image_idx}_{rep:02d}.png"
         save_tensor_as_png(img_augmented, os.path.join(dir_fda_val, fname))
 
-print(f"  Saved 50 images (2 x 25) to {dir_fda_val}")
+print(f"Saved 50 images (2 x 25) to {dir_fda_val}")
 
 
 # %%
@@ -249,7 +248,7 @@ for export_idx, ds_idx in enumerate(train_indices):
     fname = f"train_{export_idx:03d}_ds{ds_idx}.png"
     save_tensor_as_png(img_augmented, os.path.join(dir_full_fda_train, fname))
 
-print(f"  Saved {len(train_indices)} images to {dir_full_fda_train}")
+print(f"Saved {len(train_indices)} images to {dir_full_fda_train}")
 
 
 # %%
@@ -267,7 +266,7 @@ for val_image_idx in range(2):
         fname = f"val{val_image_idx}_{rep:02d}.png"
         save_tensor_as_png(img_augmented, os.path.join(dir_full_fda_val, fname))
 
-print(f"  Saved 50 images (2 x 25) to {dir_full_fda_val}")
+print(f"Saved 50 images (2 x 25) to {dir_full_fda_val}")
 
 
 print("\nAll FDA exports complete.")

@@ -44,10 +44,12 @@ from torchvision.transforms.v2 import (
 import math
 import albumentations as A
 
+from model import Model
+
 
 # Mapping class IDs to train IDs
 id_to_trainid = {cls.id: cls.train_id for cls in Cityscapes.classes}
-id_to_trainid[255] = 255  # Ignore pixels should stay as 255
+id_to_trainid[255] = 255 # Ignore pixels should stay as 255
 
 # Mapping train IDs to color
 #NOTE train_id == 255 is used for the 'void' category, which is ignored during training and evaluation. We assign it a color (black) for visualization purposes.
@@ -109,7 +111,7 @@ category_to_train_ids = ((0, 1),
 # 6 = traffic light, 7 = traffic sign, 11 = person, 12 = rider, 17 = motorcycle, 18 = bicycle
 safety_critical_class_identifiers = (6, 7, 11, 12, 17, 18)
 
-
+# Helper functions 
 def update_class_confusion_matrix(confusion_matrix: torch.Tensor,
                                   predictions: torch.Tensor,
                                   labels: torch.Tensor) -> torch.Tensor:
@@ -301,19 +303,25 @@ weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                               blur_value=5,
                                               brightness_coefficient=0.8,
                                               p=1.0),
+                                 
                                  A.RandomSnow(snow_point_range=(0.2, 0.4),
-                                              brightness_coeff=2.5,
+                                              brightness_coeff=2.
+                                              5,
                                               p=1.0),
+                                 
                                  A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5), #NOTE: sun is always in the upper half of the image
                                                   num_flare_circles_range=(6, 10),
                                                   src_radius=300,
                                                   p=1.0),
+                                 
                                  A.RandomShadow(shadow_roi=(0.0, 0.5, 1.0, 1.0), #NOTE: shadows fall on the lower half (road surface)
                                                 shadow_dimension=5,
                                                 p=1.0),
+                                 
                                  A.RandomFog(fog_coef_range=(0.1, 0.3), #NOTE: moderate fog: visible but not scene-destroying
                                              alpha_coef=0.15,
                                              p=1.0)],
+                                
                                 p=0.5) # Apply one weather effect to approx 50% of training images
 
 
@@ -326,7 +334,7 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     The idea: swap the low-frequency amplitude spectrum of a training image with that of a randomly sampled target-domain (SYNTHIA) image, while keeping the phase intact.
     This transfers the global colour/lighting style of the target domain without altering the scene structure, making the model more robust to domain shifts at test time.
 
-    beta_limit=(0.0, 0.01): the paper shows beta ≤ 0.01 produces clean style transfer without visible artefacts.
+    beta_limit=(0.0, 0.01): the paper shows beta <= 0.01 produces clean style transfer without visible artefacts.
     Sampling uniformly from the full range gives the model diversity across subtle to moderate adaptation strengths during training.
 
     Returns (transform, image_paths); the caller must pass a sampled reference image via fda_metadata=[ref_img] (a list of numpy arrays) as required by this albumentations version.
@@ -351,7 +359,7 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
     The full augmentation order is:
         [FDA] --> [WA]  -->  ColorJitter  --> GaussianBlur  -->  RandomHorizontalFlip  -->  Normalize
 
-    This ordering is intentional:
+    This ordering is:
       - FDA and WA operate on uint8 pixel values and should see a "clean" image first, so ColorJitter and blur do not interfere with the Fourier spectrum or the weather effects.
       - ColorJitter and GaussianBlur run after the domain augmentations to add photometric and focus-level variation on top of the already-adapted image.
       - The flip comes last among the stochastic transforms so mask and image stay in sync.
@@ -409,12 +417,12 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
 
             elif self.augmentation_mode == "fda":
                 # FDA only; each image gets a freshly sampled SYNTHIA reference image, so the style varies across the full training set for maximum domain diversity
-                img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"]  # type: ignore
+                img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"] # type: ignore
 
             elif self.augmentation_mode == "both":
                 # FDA first (global colour/style transfer from SYNTHIA), then WA on top (scene-level weather effects).
                 # This order ensures the weather is layered onto the already domain-adapted image, which is the most realistic simulation of the target scenario.
-                img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"]  # type: ignore
+                img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"] # type: ignore
                 img_numpy = weather_augmentations(image=img_numpy)["image"]
 
             # Convert back to float32 CHW tensor in [0, 1] for torchvision transforms
@@ -463,17 +471,6 @@ class DiceLoss(nn.Module):
         dice_per_class = (2 * intersection + self.smooth) / (cardinality + self.smooth)
 
         return 1 - dice_per_class.mean()
-
-
-class CEDiceLoss(nn.Module):
-    def __init__(self, ignore_index=255, label_smoothing=0.1, dice_weight=0.5):
-        super().__init__()
-        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index, label_smoothing=label_smoothing)
-        self.dice = DiceLoss(ignore_index=ignore_index)
-        self.dice_weight = dice_weight #NOTE: weight of Dice loss, CE weight = 1 - dice_weight
-
-    def forward(self, logits, targets):
-        return (1 - self.dice_weight) * self.ce(logits, targets) + self.dice_weight * self.dice(logits, targets)
 
 
 class BoundaryLoss(nn.Module):
@@ -673,31 +670,9 @@ class SafetyCriticalRebalancedBoundaryLoss(RebalancedBoundaryLoss):
                          alpha_start=alpha_start,
                          alpha_end=alpha_end,
                          num_epochs=num_epochs)
-  
-  
-#NOTE: Not used as of now, but implemented as backup plan in case the boundary aware losses do not work out
-#NOTE: Focal loss is designed to address class imbalance by down-weighting easy examples and focusing training on hard examples.
-class FocalLoss(nn.Module):
-    def __init__(self, ignore_index=255, gamma=2.0):
-        super().__init__()
-        self.ignore_index = ignore_index
-        self.gamma = gamma #NOTE: A common default value for gamma in focal loss is 2.0
-        
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        # Compute standard CE per pixel (unreduced)
-        ce_loss = F.cross_entropy(logits, targets, ignore_index=self.ignore_index, reduction='none')
-
-        # Compute p_t = exp(-CE); probability of correct class
-        pt = torch.exp(-ce_loss)
-
-        # Apply focal modulating factor
-        focal_loss = (1 - pt) ** self.gamma * ce_loss
-
-        # Only average over valid pixels
-        valid_mask = targets != self.ignore_index
-        return focal_loss[valid_mask].mean()
 
 
+# Helper function to compute loss and return individual components for logging
 def compute_loss_with_components(criterion, logits: torch.Tensor, targets: torch.Tensor, epoch: int):
     if isinstance(criterion, RebalancedBoundaryLoss):
         return criterion(logits, targets, epoch=epoch, return_components=True)
@@ -721,19 +696,17 @@ def get_args_parser():
 
     parser = ArgumentParser("Training script for DINO-based semantic segmentation")
     parser.add_argument("--data-dir", type=str, default="./data/cityscapes", help="Path to the training data")
-    parser.add_argument("--batch-size", type=int, default=64, help="Training batch size")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=8, help="Training batch size")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--num-workers", type=int, default=10, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
+    parser.add_argument("--experiment-id", type=str, default="DINOv2-robustness-training", help="Experiment ID for Weights & Biases")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of gradient accumulation steps")
     parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"], help="Mixed precision mode")
-    parser.add_argument("--decoder", type=str, default="linear", choices=["linear", "upsample", "mlp", "EoMT"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
-    parser.add_argument("--augmentation", type=str, default="wa", choices=["wa", "fda", "both"],
-                        help="Domain-robustness augmentation strategy: 'wa' for weather augmentations, 'fda' for Fourier Domain Adaptation, 'both' for FDA followed by weather augmentations")
-    parser.add_argument("--synthia-dir", type=str, default="../data/synthia",
-                        help="Path to the SYNTHIA reference image directory, used as target domain for FDA style transfer")
+    parser.add_argument("--decoder", type=str, default="upsample", choices=["linear", "upsample", "mlp"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
+    parser.add_argument("--augmentation", type=str, default="wa", choices=["wa", "fda", "both"], help="Domain-robustness augmentation strategy: 'wa' for weather augmentations, 'fda' for Fourier Domain Adaptation, 'both' for FDA followed by weather augmentations")
+    parser.add_argument("--synthia-dir", type=str, default="../data/synthia", help="Path to the SYNTHIA reference image directory, used as target domain for FDA style transfer")
 
     return parser
 
@@ -771,10 +744,8 @@ def main(args):
     image_padding = (5, 6, 5, 6) # left, top, right, bottom
 
     # Training transform; only converts to tensor and pads; no jitter, blur or normalization here.
-    # ColorJitter, GaussianBlur, the horizontal flip, and Normalize are all applied inside
-    # AugmentedCityscapes.__getitem__ after the albumentations augmentations (FDA / WA), so that
-    # the pixel-level albumentations operate on a clean, un-jittered uint8 image.
-    # The required augmentation order is: [FDA] → [WA] → ColorJitter → GaussianBlur → flip → normalize
+    # ColorJitter, GaussianBlur, the horizontal flip, and Normalize are all applied inside AugmentedCityscapes.__getitem__ after the albumentations augmentations (FDA / WA), so that  the pixel-level albumentations operate on a clean, un-jittered uint8 image.
+    # The required augmentation order is: [FDA] --> [WA] --> ColorJitter --> GaussianBlur --> flip --> normalize
     train_img_transform = Compose([
         ToImage(),
         ToDtype(torch.float32, scale=True),
@@ -861,33 +832,15 @@ def main(args):
     )
 
     # Define the model
-    from model import DinoEoMT, DinoLinearDecoder, DinoMLPDecoder, DinoUpsamplingDecoder
-
-    if args.decoder == "linear":
-        model = DinoLinearDecoder(n_classes=19)
-    elif args.decoder == "upsample":
-        model = DinoUpsamplingDecoder(n_classes=19)
-    elif args.decoder == "mlp":
-        model = DinoMLPDecoder(n_classes=19)
-    elif args.decoder == "EoMT":
-        model = DinoEoMT(n_classes=19)
-    else:
-        raise ValueError("Unknown decoder")
+    model = Model(decoder=args.decoder, n_classes=19)
 
     model = model.to(device)
     
-    # For the plain DINOv2 models, freeze the entire backbone and train only the decoder head.
-    # EoMT is used here as a frozen pretrained baseline, so none of its parameters are updated.
-    if args.decoder == "EoMT":
-        for param in model.parameters():
-            param.requires_grad = False
-    else:
-        for param in model.backbone.parameters():
-            param.requires_grad = False
-        for param in model.decoder.parameters():
-            param.requires_grad = True
-
-    is_trainable_model = args.decoder != "EoMT"
+    # Freeze backbone, not the decoder head
+    for param in model.backbone.parameters():
+        param.requires_grad = False
+    for param in model.decoder.parameters():
+        param.requires_grad = True
     
     # Define the loss function
     # Experiment C: safety-critical rebalanced CE + Dice + boundary loss
@@ -901,13 +854,6 @@ def main(args):
                                                      alpha_start=0.01,
                                                      alpha_end=0.5,
                                                      num_epochs=args.epochs)
-
-    #UNUSED EXPERIMENTS, BUT COULD BE INTERESTING TO TRY:
-    # Experiment D: CE only
-    # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
-    
-    # Experiment E: Focal loss
-    # criterion = FocalLoss(ignore_index=255, gamma=2.0)
     
     # Define the optimizer (SGD) with momentum and weight decay and a polynomial learning rate scheduler.
     #NOTE: "On the Effect of Image Resolution on Semantic Segmentation" by Singh et al. (2024) use polynomial decay and sgd with momentum https://arxiv.org/pdf/2402.05398 
@@ -946,50 +892,44 @@ def main(args):
             accelerator.print(f"Epoch {epoch+1:04}/{args.epochs:04} | alpha={epoch_alpha:.4f}")
 
         # Training
-        if is_trainable_model:
-            model.train()
-            optimizer.zero_grad(set_to_none=True)
-            for i, (images, labels) in enumerate(train_dataloader):
+        model.train()
+        optimizer.zero_grad(set_to_none=True)
+        for i, (images, labels) in enumerate(train_dataloader):
 
-                images = images.to(device)
-                labels = label_lookup[labels.squeeze(1)].to(device)
+            images = images.to(device)
+            labels = label_lookup[labels.squeeze(1)].to(device)
 
-                # Use accelerator to handle mixed precision and gradient accumulation
-                with accelerator.accumulate(model):
-                    with accelerator.autocast():
-                        outputs = model(images)
-                        loss, loss_components = compute_loss_with_components(criterion, outputs, labels, epoch)
+            # Use accelerator to handle mixed precision and gradient accumulation
+            with accelerator.accumulate(model):
+                with accelerator.autocast():
+                    outputs = model(images)
+                    loss, loss_components = compute_loss_with_components(criterion, outputs, labels, epoch)
 
-                    accelerator.backward(loss)
-                    if accelerator.sync_gradients:
-                        optimizer.step()
-                        current_lr = optimizer.param_groups[0]['lr']
-                        scheduler.step()
-                        optimizer.zero_grad(set_to_none=True)
-
-                gathered_loss = accelerator.gather(loss.detach().reshape(1)).mean().item() # NOTE: gradient accumulation
-                gathered_loss_components = {
-                    name: accelerator.gather(value.detach().float().reshape(1)).mean().item()
-                    for name, value in loss_components.items()
-                }
-
-                # Log the training metrics only on real optimizer update steps
+                accelerator.backward(loss)
                 if accelerator.sync_gradients:
-                    train_step += 1
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad(set_to_none=True)
 
-                if accelerator.is_main_process and accelerator.sync_gradients:
-                    train_metrics = {
-                        "train_loss": gathered_loss,
-                        "learning_rate": current_lr,
-                        "epoch": epoch + 1,
-                    }
-                    for name, value in gathered_loss_components.items():
-                        train_metrics[f"train_{name}"] = value
-                    wandb.log(train_metrics, step=train_step)
-        else:
-            model.eval()
-            if accelerator.is_main_process:
-                wandb.log({"epoch": epoch + 1}, step=epoch + 1)
+            gathered_loss = accelerator.gather(loss.detach().reshape(1)).mean().item() # NOTE: gradient accumulation
+            gathered_loss_components = {
+                name: accelerator.gather(value.detach().float().reshape(1)).mean().item()
+                for name, value in loss_components.items()
+            }
+
+            # Log the training metrics only on real optimizer update steps
+            if accelerator.sync_gradients:
+                train_step += 1
+
+            if accelerator.is_main_process and accelerator.sync_gradients:
+                train_metrics = {
+                    "train_loss": gathered_loss,
+                    "learning_rate": optimizer.param_groups[0]['lr'],
+                    "epoch": epoch + 1,
+                }
+                for name, value in gathered_loss_components.items():
+                    train_metrics[f"train_{name}"] = value
+                wandb.log(train_metrics, step=train_step)
             
         # Validation
         model.eval()
@@ -1045,11 +985,10 @@ def main(args):
                     predictions_img = make_grid(preds_vis.cpu(), nrow=2).permute(1, 2, 0).numpy()
                     labels_img = make_grid(labels_vis.cpu(), nrow=2).permute(1, 2, 0).numpy()
 
-                    validation_step = train_step if is_trainable_model else epoch + 1
                     wandb.log({
                         "predictions": [wandb.Image(predictions_img)],
                         "labels": [wandb.Image(labels_img)],
-                    }, step=validation_step)
+                    }, step=train_step)
             
             # Aggregate the validation loss sums and counts across all processes, and compute the final validation loss for this epoch on the main process
             valid_loss_sum = accelerator.gather(valid_loss_sum).sum()
@@ -1078,8 +1017,7 @@ def main(args):
                 if valid_loss_components_sum is not None:
                     for name, value in valid_loss_components_sum.items():
                         validation_metrics[f"valid_{name}"] = (value / valid_loss_count).item()
-                validation_step = train_step if is_trainable_model else epoch + 1
-                wandb.log(validation_metrics, step=validation_step)
+                wandb.log(validation_metrics, step=train_step)
 
                 if valid_loss < best_valid_loss:
                     best_valid_loss = valid_loss
@@ -1099,7 +1037,7 @@ def main(args):
     # Save the model
     if accelerator.is_main_process:
         accelerator.save(accelerator.unwrap_model(model).state_dict(),
-                         os.path.join(output_dir, f"final_model-epoch={epoch:04}-val_loss={best_valid_loss:04}.pt")) # type: ignore
+                         os.path.join(output_dir, f"final_model-epoch={epoch:04}-val_loss={best_valid_loss:04}.pt"))# type: ignore
         wandb.finish()
 
 

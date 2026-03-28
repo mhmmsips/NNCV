@@ -334,6 +334,7 @@ class DinoMLPDecoder(DinoSegBase):
 
 
 #NOTE: This is not used for the assignment anymore, as probably has data leakage. Training it from scratch was too difficult, so swtiched to something else.
+#NOTE: Still submitted on the submission server, but not included in the report.
 # Experiment 4: EoMT-DINOv2 (encoder-only)
 class DinoEoMT(nn.Module):
     """
@@ -341,9 +342,7 @@ class DinoEoMT(nn.Module):
     
     EoMT stems from: "Your ViT is Secretly an Image Segmentation Model" (Kerssies et al., CVPR 2025) arXiv:2503.19108. 
     
-    The used checkpoint (tue-mps/cityscapes_semantic_eomt_large_1024) was trained at 1024x1024, while Cityscapes images are 1024x2048.
-    That sounds problematic at first glance, but the published 84.2 mIoU (See: https://github.com/tue-mps/eomt/blob/master/model_zoo/dinov2.md) number was measured on the actual Cityscapes validation set. 
-    In other words, whatever padding, cropping, or resizing the official EoMT evaluation pipeline applies to handle the aspect-ratio mismatch is already reflected in that benchmark number)
+    The used checkpoint (tue-mps/cityscapes_semantic_eomt_large_1024) was trained at 1024x1024, while Cityscapes images are 1024x2048. So use sliding window in predicting
     """
     def __init__(self, model_name: str | None = None, n_classes: int = 19):
         super().__init__()
@@ -430,7 +429,7 @@ class DinoEoMT(nn.Module):
         return self._forward_window(x)
 
 
-# Submission entry point — predict.py imports and instantiates this class by name
+# Submission entry point; predict.py imports and instantiates this class by name
 class Model(DinoSegBase):
     """
     Concrete backbone + decoder model used by predict.py for submission.

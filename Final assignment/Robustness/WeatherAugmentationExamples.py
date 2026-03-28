@@ -116,8 +116,7 @@ val_img_transform = Compose([ToImage(),
                               Pad(padding=image_padding, fill=0),
                               Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
 
-# Validation transform without normalize; used for the images we want to weather-augment,
-# so albumentations receives a uint8 image before the pixel range is shifted by normalization
+# Validation transform without normalize; used for the images we want to weather-augment, so albumentations receives a uint8 image before the pixel range is shifted by normalization
 val_img_transform_no_norm = Compose([ToImage(),
                                      ToDtype(torch.float32, scale=True),
                                      Pad(padding=image_padding, fill=0)])
@@ -209,8 +208,7 @@ def load_train_dataset() -> Cityscapes:
 def load_val_dataset_no_norm() -> Cityscapes:
     """Load the Cityscapes validation split without the final normalize step.
 
-    Normalization is skipped so albumentations receives a uint8 image in the
-    original pixel range, before any normalization shift has been applied.
+    Normalization is skipped so albumentations receives a uint8 image in the original pixel range, before any normalization shift has been applied.
     """
     return Cityscapes(data_dir,
                       split="val",
@@ -240,7 +238,7 @@ for export_idx, ds_idx in enumerate(train_indices):
     fname = f"train_{export_idx:03d}_ds{ds_idx}.png"
     save_tensor_as_png(img_augmented, os.path.join(dir_weather_train, fname))
 
-print(f"  Saved {len(train_indices)} images to {dir_weather_train}")
+print(f"Saved {len(train_indices)} images to {dir_weather_train}")
 
 
 # %%
@@ -262,7 +260,7 @@ for val_image_idx in range(2):
         fname = f"val{val_image_idx}_{rep:02d}.png"
         save_tensor_as_png(img_augmented, os.path.join(dir_weather_val, fname))
 
-print(f"  Saved 50 images (2 x 25) to {dir_weather_val}")
+print(f"Saved 50 images (2 x 25) to {dir_weather_val}")
 
 
 # %%
@@ -279,7 +277,7 @@ for export_idx, ds_idx in enumerate(train_indices):
     fname = f"train_{export_idx:03d}_ds{ds_idx}.png"
     save_tensor_as_png(img_augmented, os.path.join(dir_full_train, fname))
 
-print(f"  Saved {len(train_indices)} images to {dir_full_train}")
+print(f"Saved {len(train_indices)} images to {dir_full_train}")
 
 
 # %%
@@ -297,7 +295,7 @@ for val_image_idx in range(2):
         fname = f"val{val_image_idx}_{rep:02d}.png"
         save_tensor_as_png(img_augmented, os.path.join(dir_full_val, fname))
 
-print(f"  Saved 50 images (2 x 25) to {dir_full_val}")
+print(f"Saved 50 images (2 x 25) to {dir_full_val}")
 
 
 print("\nAll exports complete.")
