@@ -73,7 +73,7 @@ print(f"Found {len(synthia_image_paths)} SYNTHIA reference images")
 # FDA transform applied to 100% of images; beta_limit=(0.0, 0.01): the paper shows beta <= 0.01 produces clean style transfer without visible artefacts.
 # Sampling uniformly from the full range gives diversity across subtle to moderate adaptation strengths; the model sees a range of domain shifts during training.
 # Reference image is sampled per call and passed via fda_metadata as required by this albumentations version
-fda_aug = A.Compose([A.FDA(beta_limit=(0.0, 0.01), p=1.0)])
+fda_aug = A.Compose([A.FDA(beta_limit=(0.0, 0.001), p=1.0)])
 
 
 def sample_synthia_image() -> np.ndarray:
@@ -100,7 +100,7 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
                                               shadow_dimension=5,
                                               p=1.0),
 
-                               A.RandomFog(fog_coef_range=(0.2, 0.5), # moderate fog: visible but not scene-destroying
+                               A.RandomFog(fog_coef_range=(0.1, 0.3), # moderate fog: visible but not scene-destroying
                                            alpha_coef=0.15,
                                            p=1.0)],
 
@@ -126,7 +126,7 @@ weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
                                              shadow_dimension=5,
                                              p=1.0),
 
-                              A.RandomFog(fog_coef_range=(0.2, 0.5),
+                              A.RandomFog(fog_coef_range=(0.1, 0.3),
                                           alpha_coef=0.15,
                                           p=1.0)],
 

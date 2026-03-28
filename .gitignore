@@ -188,3 +188,6 @@ Final assignment/checkpoints/
 SKILL.md
 openai.yaml
 style-reference.md
+
+# Robustness test images
+*.png

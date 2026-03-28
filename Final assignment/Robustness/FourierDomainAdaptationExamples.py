@@ -72,7 +72,7 @@ print(f"Found {len(synthia_image_paths)} SYNTHIA reference images")
 # FDA transform applied to 100% of images; beta_limit=(0.0, 0.01): the paper shows beta <= 0.01 produces clean style transfer without visible artefacts
 # Sampling uniformly from the full range gives diversity across subtle to moderate adaptation strengths; the model sees a range of domain shifts during training.
 # Reference image is sampled per call and passed via fda_metadata as required by this albumentations version
-fda_aug = A.Compose([A.FDA(beta_limit=(0.0, 0.01), p=1.0)])
+fda_aug = A.Compose([A.FDA(beta_limit=(0.0, 0.001), p=1.0)])
 
 
 def sample_synthia_image() -> np.ndarray:
