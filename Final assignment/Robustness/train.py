@@ -52,7 +52,7 @@ id_to_trainid[255] = 255  # Ignore pixels should stay as 255
 # Mapping train IDs to color
 #NOTE train_id == 255 is used for the 'void' category, which is ignored during training and evaluation. We assign it a color (black) for visualization purposes.
 train_id_to_color = {cls.train_id: cls.color for cls in Cityscapes.classes if cls.train_id != 255}
-train_id_to_color[255] = (0, 0, 0)  # Assign black to ignored labels
+train_id_to_color[255] = (0, 0, 0) # Assign black to ignored labels
 
 def convert_train_id_to_color(prediction: torch.Tensor) -> torch.Tensor:
     batch, _, height, width = prediction.shape
@@ -321,24 +321,15 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     """Build an FDA (Fourier Domain Adaptation) transform from a directory of SYNTHIA reference images.
 
     Implements the approach from:
-        "FDA: Fourier Domain Adaptation for Semantic Segmentation"
-        Yanchao Yang and Stefano Soatto, CVPR 2020.
+        "FDA: Fourier Domain Adaptation for Semantic Segmentation" by Yanchao Yang and Stefano Soatto, CVPR 2020.
 
-    The idea: swap the low-frequency amplitude spectrum of a training image with that of a
-    randomly sampled target-domain (SYNTHIA) image, while keeping the phase intact.
-    This transfers the global colour/lighting style of the target domain without altering
-    the scene structure, making the model more robust to domain shifts at test time.
+    The idea: swap the low-frequency amplitude spectrum of a training image with that of a randomly sampled target-domain (SYNTHIA) image, while keeping the phase intact.
+    This transfers the global colour/lighting style of the target domain without altering the scene structure, making the model more robust to domain shifts at test time.
 
-<<<<<<< HEAD
-    beta_limit=(0.0, 0.001): the paper shows beta <= 0.001 produces clean style transfer without
-=======
-    beta_limit=(0.0, 0.01): the paper shows beta ≤ 0.01 produces clean style transfer without
->>>>>>> c6e23afd33bf75ccc8d9ce149f46c5da9097ca8c
-    visible artefacts. Sampling uniformly from the full range gives the model diversity across
-    subtle to moderate adaptation strengths during training.
+    beta_limit=(0.0, 0.01): the paper shows beta ≤ 0.01 produces clean style transfer without visible artefacts.
+    Sampling uniformly from the full range gives the model diversity across subtle to moderate adaptation strengths during training.
 
-    Returns (transform, image_paths); the caller must pass a sampled reference image via
-    fda_metadata=[ref_img] (a list of numpy arrays) as required by this albumentations version.
+    Returns (transform, image_paths); the caller must pass a sampled reference image via fda_metadata=[ref_img] (a list of numpy arrays) as required by this albumentations version.
     """
     # Collect all image files from the synthia directory recursively
     synthia_image_paths = []
@@ -350,11 +341,7 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     if len(synthia_image_paths) == 0:
         raise ValueError(f"No images found in synthia directory: {synthia_dir}")
 
-<<<<<<< HEAD
-    return A.Compose([A.FDA(beta_limit=(0.0, 0.001), p=1.0)]), synthia_image_paths
-=======
     return A.Compose([A.FDA(beta_limit=(0.0, 0.01), p=1.0)]), synthia_image_paths
->>>>>>> c6e23afd33bf75ccc8d9ce149f46c5da9097ca8c
 
 
 # Define a class to augment the Cityscapes dataset with the full augmentation pipeline
@@ -362,21 +349,19 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
     """Wraps a Cityscapes dataset and applies the configured augmentation pipeline.
 
     The full augmentation order is:
-        [FDA]  →  [WA]  →  ColorJitter  →  GaussianBlur  →  RandomHorizontalFlip  →  Normalize
+        [FDA] --> [WA]  -->  ColorJitter  --> GaussianBlur  -->  RandomHorizontalFlip  -->  Normalize
 
     This ordering is intentional:
-      - FDA and WA operate on uint8 pixel values and should see a "clean" image first,
-        so ColorJitter and blur do not interfere with the Fourier spectrum or the weather effects.
-      - ColorJitter and GaussianBlur run after the domain augmentations to add photometric
-        and focus-level variation on top of the already-adapted image.
+      - FDA and WA operate on uint8 pixel values and should see a "clean" image first, so ColorJitter and blur do not interfere with the Fourier spectrum or the weather effects.
+      - ColorJitter and GaussianBlur run after the domain augmentations to add photometric and focus-level variation on top of the already-adapted image.
       - The flip comes last among the stochastic transforms so mask and image stay in sync.
       - Normalize always goes last; albumentations cannot handle normalized float tensors.
 
     augmentation_mode controls which domain-robustness augmentations are applied:
-        "wa" — weather augmentations only (rain, snow, fog, etc.)
-        "fda" — Fourier Domain Adaptation only (SYNTHIA style transfer)
-        "both" — FDA first, then WA on top
-        None — no domain-robustness augmentation (validation mode)
+        "wa"; weather augmentations only (rain, snow, fog, etc.)
+        "fda"; Fourier Domain Adaptation only (SYNTHIA style transfer)
+        "both"; FDA first, then WA on top
+        None; no domain-robustness augmentation (validation mode)
     """
 
     def __init__(self,
@@ -414,24 +399,21 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         img, mask = self.dataset[idx]
         if self.augment:
-            # Albumentations expects uint8 HWC numpy arrays. At this point the image is a float32 CHW
-            # tensor scaled to [0, 1] — no jitter or blur has been applied yet, which is intentional so
-            # that FDA and WA operate on a clean image before any photometric perturbations are added.
+            # Albumentations expects uint8 HWC numpy arrays. At this point the image is a float32 CHW tensor scaled to [0, 1]; no jitter or blur has been applied yet, 
+            #NOTE: this is intentional so that FDA and WA operate on a clean image before any photometric perturbations are added.
             img_numpy = (img.permute(1, 2, 0).numpy() * 255).clip(0, 255).astype("uint8")
 
             if self.augmentation_mode == "wa":
-                # Weather augmentations only — mask labels are unaffected by weather conditions
+                # Weather augmentations only; mask labels are unaffected by weather conditions
                 img_numpy = weather_augmentations(image=img_numpy)["image"]
 
             elif self.augmentation_mode == "fda":
-                # FDA only — each image gets a freshly sampled SYNTHIA reference image, so the style
-                # varies across the full training set for maximum domain diversity
+                # FDA only; each image gets a freshly sampled SYNTHIA reference image, so the style varies across the full training set for maximum domain diversity
                 img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"]  # type: ignore
 
             elif self.augmentation_mode == "both":
-                # FDA first (global colour/style transfer from SYNTHIA), then WA on top (scene-level
-                # weather effects). This order ensures the weather is layered onto the already
-                # domain-adapted image, which is the most realistic simulation of the target scenario.
+                # FDA first (global colour/style transfer from SYNTHIA), then WA on top (scene-level weather effects).
+                # This order ensures the weather is layered onto the already domain-adapted image, which is the most realistic simulation of the target scenario.
                 img_numpy = self.fda_transform(image=img_numpy, fda_metadata=self._sample_fda_metadata())["image"]  # type: ignore
                 img_numpy = weather_augmentations(image=img_numpy)["image"]
 
@@ -443,7 +425,7 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
             img = self.gaussian_blur(img)
             img, mask = self.joint_flip(img, mask)
 
-            # Normalize last — all pixel-level augmentations must be complete before this
+            # Normalize last; all pixel-level augmentations must be complete before this
             img = self.normalize(img)
 
         return img, mask
@@ -788,9 +770,9 @@ def main(args):
     # Pad to 1036x2058 so both spatial dimensions become divisible by 14 and no border pixels are dropped by the patch embedding.
     image_padding = (5, 6, 5, 6) # left, top, right, bottom
 
-    # Training transform — only converts to tensor and pads; no jitter, blur or normalization here.
+    # Training transform; only converts to tensor and pads; no jitter, blur or normalization here.
     # ColorJitter, GaussianBlur, the horizontal flip, and Normalize are all applied inside
-    # AugmentedCityscapes.__getitem__ *after* the albumentations augmentations (FDA / WA), so that
+    # AugmentedCityscapes.__getitem__ after the albumentations augmentations (FDA / WA), so that
     # the pixel-level albumentations operate on a clean, un-jittered uint8 image.
     # The required augmentation order is: [FDA] → [WA] → ColorJitter → GaussianBlur → flip → normalize
     train_img_transform = Compose([
