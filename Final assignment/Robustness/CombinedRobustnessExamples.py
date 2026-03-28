@@ -273,7 +273,7 @@ for export_idx, ds_idx in enumerate(train_indices):
     fname = f"train_{export_idx:03d}_ds{ds_idx}.png"
     save_tensor_as_png(img_augmented, os.path.join(dir_combined_train, fname))
 
-print(f"  Saved {len(train_indices)} images to {dir_combined_train}")
+print(f"Saved {len(train_indices)} images to {dir_combined_train}")
 
 
 # %%
@@ -295,7 +295,7 @@ for val_image_idx in range(2):
         fname = f"val{val_image_idx}_{rep:02d}.png"
         save_tensor_as_png(img_augmented, os.path.join(dir_combined_val, fname))
 
-print(f"  Saved 50 images (2 x 25) to {dir_combined_val}")
+print(f"Saved 50 images (2 x 25) to {dir_combined_val}")
 
 
 # %%
@@ -312,7 +312,7 @@ for export_idx, ds_idx in enumerate(train_indices):
     fname = f"train_{export_idx:03d}_ds{ds_idx}.png"
     save_tensor_as_png(img_augmented, os.path.join(dir_full_combined_train, fname))
 
-print(f"  Saved {len(train_indices)} images to {dir_full_combined_train}")
+print(f"Saved {len(train_indices)} images to {dir_full_combined_train}")
 
 
 # %%
@@ -330,7 +330,7 @@ for val_image_idx in range(2):
         fname = f"val{val_image_idx}_{rep:02d}.png"
         save_tensor_as_png(img_augmented, os.path.join(dir_full_combined_val, fname))
 
-print(f"  Saved 50 images (2 x 25) to {dir_full_combined_val}")
+print(f"Saved 50 images (2 x 25) to {dir_full_combined_val}")
 
 
 print("\nAll combined exports complete.")

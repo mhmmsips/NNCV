@@ -9,8 +9,6 @@ allowing you to easily modify hyperparameters using a command-line argument pars
    To address this, we use the `wandb` library for logging and tracking progress and results.
 3. **Encapsulation:** The training loop is encapsulated in a function, enabling it to be called from the main block. 
    This ensures proper execution when the script is run directly.
-
-Feel free to customize the script as needed for your use case.
 """
 import os
 import random
@@ -107,6 +105,7 @@ category_to_train_ids = ((0, 1),
 safety_critical_class_identifiers = (6, 7, 11, 12, 17, 18)
 
 
+# Functions to calculate the metrics
 def update_class_confusion_matrix(confusion_matrix: torch.Tensor,
                                   predictions: torch.Tensor,
                                   labels: torch.Tensor) -> torch.Tensor:
@@ -169,8 +168,7 @@ def aggregate_class_scores(scores: torch.Tensor,
 
 def compute_dice_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]:
     """
-    Compute MeanDice over the 19 valid classes and Dice* super-category metrics
-    as unweighted means over the member class Dice scores.
+    Compute MeanDice over the 19 valid classes and Dice* super-category metrics as unweighted means over the member class Dice scores.
     """
     dice_scores, valid_scores = compute_class_dice_scores(confusion_matrix)
 
@@ -219,8 +217,7 @@ def compute_boundary_iou_batch(predictions: torch.Tensor,
     """
     Compute per-class Boundary IoU intersections and unions for a batch.
 
-    Boundary thickness is fixed for the whole batch and set to 0.5% of the
-    image diagonal in pixels.
+    Boundary thickness is fixed for the whole batch and set to 0.5% of the image diagonal in pixels.
 
     Args:
         predictions: Predicted class map of shape (B, H, W).
@@ -271,6 +268,7 @@ def compute_boundary_iou_metrics(intersections: torch.Tensor,
                                  unions: torch.Tensor) -> dict[str, float]:
     """
     Compute MeanBoundaryIoU over the 19 classes, plus safety-critical boundary
+    
     IoU metrics for the classes emphasized by the safety-critical loss.
     """
     # Compute Boundary IoU per class, handling cases where the union is zero to avoid division by zero errors.
@@ -308,7 +306,7 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
         return img, mask
     
     
-# Define classes for the combined CE + Dice loss and the Focal loss, which you can easily switch between.
+# Define classes for the combined CE + Dice loss
 class DiceLoss(nn.Module):
     def __init__(self, ignore_index=255, smooth=1e-6):
         super().__init__()
@@ -574,7 +572,7 @@ class FocalLoss(nn.Module):
         valid_mask = targets != self.ignore_index
         return focal_loss[valid_mask].mean()
 
-
+# Helper function to compute loss and return individual components for logging
 def compute_loss_with_components(criterion, logits: torch.Tensor, targets: torch.Tensor, epoch: int):
     if isinstance(criterion, RebalancedBoundaryLoss):
         return criterion(logits, targets, epoch=epoch, return_components=True)
@@ -598,8 +596,8 @@ def get_args_parser():
 
     parser = ArgumentParser("Training script for a PyTorch U-Net model")
     parser.add_argument("--data-dir", type=str, default="./data/cityscapes", help="Path to the training data")
-    parser.add_argument("--batch-size", type=int, default=64, help="Training batch size")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=8, help="Training batch size")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--num-workers", type=int, default=10, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
@@ -718,7 +716,9 @@ def main(args):
         n_classes=19,  # 19 classes in the Cityscapes dataset
     ).to(device)
     
+    
     # Define the loss function
+    #NOTE: Enable each of them individually to run the experiments as presented in the report.
     # Experiment A: CE + Dice
     # criterion = CEDiceLoss(ignore_index=255, label_smoothing=0.1, dice_weight=0.5) # Ignore the void class
 
@@ -744,12 +744,13 @@ def main(args):
                                                      alpha_end=0.5,
                                                      num_epochs=args.epochs)
 
-    #UNUSED EXPERIMENTS, BUT COULD BE INTERESTING TO TRY:
+    #NOTE: UNUSED EXPERIMENTS, BUT COULD BE INTERESTING TO TRY:
     # Experiment D: CE only
     # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
     
     # Experiment E: Focal loss
     # criterion = FocalLoss(ignore_index=255, gamma=2.0)
+    
     
     # Define the optimizer (SGD) with momentum and weight decay and a polynomial learning rate scheduler.
     #NOTE: "On the Effect of Image Resolution on Semantic Segmentation" by Singh et al. (2024) use polynomial decay and sgd with momentum https://arxiv.org/pdf/2402.05398 
