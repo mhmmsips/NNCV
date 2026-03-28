@@ -70,7 +70,7 @@ weather_aug_always = A.OneOf([A.RandomRain(rain_type="heavy",
                                               shadow_dimension=5,
                                               p=1.0),
 
-                               A.RandomFog(fog_coef_range=(0.2, 0.5), # moderate fog: visible but not scene-destroying
+                               A.RandomFog(fog_coef_range=(0.1, 0.3), # moderate fog: visible but not scene-destroying
                                            alpha_coef=0.15,
                                            p=1.0)],
 
@@ -94,7 +94,7 @@ weather_aug_50pct = A.OneOf([A.RandomRain(rain_type="heavy",
                                              shadow_dimension=5,
                                              p=1.0),
 
-                              A.RandomFog(fog_coef_range=(0.2, 0.5),
+                              A.RandomFog(fog_coef_range=(0.1, 0.3),
                                           alpha_coef=0.15,
                                           p=1.0)],
 

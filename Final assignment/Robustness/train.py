@@ -311,7 +311,7 @@ weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                  A.RandomShadow(shadow_roi=(0.0, 0.5, 1.0, 1.0), #NOTE: shadows fall on the lower half (road surface)
                                                 shadow_dimension=5,
                                                 p=1.0),
-                                 A.RandomFog(fog_coef_range=(0.2, 0.5), #NOTE: moderate fog: visible but not scene-destroying
+                                 A.RandomFog(fog_coef_range=(0.1, 0.3), #NOTE: moderate fog: visible but not scene-destroying
                                              alpha_coef=0.15,
                                              p=1.0)],
                                 p=0.5) # Apply one weather effect to approx 50% of training images
@@ -329,7 +329,7 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     This transfers the global colour/lighting style of the target domain without altering
     the scene structure, making the model more robust to domain shifts at test time.
 
-    beta_limit=(0.0, 0.05): the paper shows β ≤ 0.05 produces clean style transfer without
+    beta_limit=(0.0, 0.001): the paper shows beta <= 0.001 produces clean style transfer without
     visible artefacts. Sampling uniformly from the full range gives the model diversity across
     subtle to moderate adaptation strengths during training.
 
@@ -346,7 +346,7 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     if len(synthia_image_paths) == 0:
         raise ValueError(f"No images found in synthia directory: {synthia_dir}")
 
-    return A.Compose([A.FDA(beta_limit=(0.0, 0.05), p=1.0)]), synthia_image_paths
+    return A.Compose([A.FDA(beta_limit=(0.0, 0.001), p=1.0)]), synthia_image_paths
 
 
 # Define a class to augment the Cityscapes dataset with the full augmentation pipeline
@@ -365,10 +365,10 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
       - Normalize always goes last; albumentations cannot handle normalized float tensors.
 
     augmentation_mode controls which domain-robustness augmentations are applied:
-        "wa"   — weather augmentations only (rain, snow, fog, etc.)
-        "fda"  — Fourier Domain Adaptation only (SYNTHIA style transfer)
+        "wa" — weather augmentations only (rain, snow, fog, etc.)
+        "fda" — Fourier Domain Adaptation only (SYNTHIA style transfer)
         "both" — FDA first, then WA on top
-        None   — no domain-robustness augmentation (validation mode)
+        None — no domain-robustness augmentation (validation mode)
     """
 
     def __init__(self,
