@@ -329,7 +329,11 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     This transfers the global colour/lighting style of the target domain without altering
     the scene structure, making the model more robust to domain shifts at test time.
 
+<<<<<<< HEAD
     beta_limit=(0.0, 0.001): the paper shows beta <= 0.001 produces clean style transfer without
+=======
+    beta_limit=(0.0, 0.01): the paper shows beta ≤ 0.01 produces clean style transfer without
+>>>>>>> c6e23afd33bf75ccc8d9ce149f46c5da9097ca8c
     visible artefacts. Sampling uniformly from the full range gives the model diversity across
     subtle to moderate adaptation strengths during training.
 
@@ -346,7 +350,11 @@ def build_fda_transform(synthia_dir: str) -> tuple[A.FDA, list[str]]:
     if len(synthia_image_paths) == 0:
         raise ValueError(f"No images found in synthia directory: {synthia_dir}")
 
+<<<<<<< HEAD
     return A.Compose([A.FDA(beta_limit=(0.0, 0.001), p=1.0)]), synthia_image_paths
+=======
+    return A.Compose([A.FDA(beta_limit=(0.0, 0.01), p=1.0)]), synthia_image_paths
+>>>>>>> c6e23afd33bf75ccc8d9ce149f46c5da9097ca8c
 
 
 # Define a class to augment the Cityscapes dataset with the full augmentation pipeline
