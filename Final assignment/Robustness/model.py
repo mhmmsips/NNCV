@@ -321,7 +321,7 @@ class DinoMLPDecoder(DinoSegBase):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         H, W = x.shape[-2:]
 
-        # Use only the final patch feature map — same as the upsampling decoder
+        # Use only the final patch feature map; same as the upsampling decoder
         feats = self.extract_patch_features(x)
         logits = self.decoder(feats)
 
@@ -430,7 +430,7 @@ class DinoEoMT(nn.Module):
         return self._forward_window(x)
 
 
-# Submission entry point — predict.py imports and instantiates this class by name
+# Submission entry point; predict.py imports and instantiates this class by name
 class Model(DinoSegBase):
     """
     Concrete backbone + decoder model used by predict.py for submission.
