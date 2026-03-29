@@ -190,4 +190,4 @@ openai.yaml
 style-reference.md
 
 # Robustness test images
-*.png
+*.png*.pt
