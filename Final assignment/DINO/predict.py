@@ -72,7 +72,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Load model
-    model = Model()
+    model = Model(decoder="upsample")
     state_dict = torch.load(
         MODEL_PATH, 
         map_location=device,
