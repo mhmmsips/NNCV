@@ -9,8 +9,6 @@ allowing you to easily modify hyperparameters using a command-line argument pars
    To address this, we use the `wandb` library for logging and tracking progress and results.
 3. **Encapsulation:** The training loop is encapsulated in a function, enabling it to be called from the main block. 
    This ensures proper execution when the script is run directly.
-
-Feel free to customize the script as needed for your use case.
 """
 import os
 import random
@@ -28,17 +26,15 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
 from torchvision.utils import make_grid
-from torchvision.transforms.v2 import (
-    Compose,
-    Normalize,
-    ToImage,
-    ToDtype,
-    Pad,
-    RandomHorizontalFlip,
-    ColorJitter,
-    GaussianBlur,
-    RandomApply,
-)
+from torchvision.transforms.v2 import (Compose,
+                                       Normalize,
+                                       ToImage,
+                                       ToDtype,
+                                       Pad,
+                                       RandomHorizontalFlip,
+                                       ColorJitter,
+                                       GaussianBlur,
+                                       RandomApply)
 import math
 
 
@@ -51,6 +47,7 @@ id_to_trainid[255] = 255  # Ignore pixels should stay as 255
 train_id_to_color = {cls.train_id: cls.color for cls in Cityscapes.classes if cls.train_id != 255}
 train_id_to_color[255] = (0, 0, 0)  # Assign black to ignored labels
 
+# Helper function
 def convert_train_id_to_color(prediction: torch.Tensor) -> torch.Tensor:
     batch, _, height, width = prediction.shape
     color_image = torch.zeros((batch, 3, height, width), dtype=torch.uint8, device=prediction.device)
@@ -107,6 +104,7 @@ category_to_train_ids = ((0, 1),
 safety_critical_class_identifiers = (6, 7, 11, 12, 17, 18)
 
 
+# Functions to calculate metrics
 def update_class_confusion_matrix(confusion_matrix: torch.Tensor,
                                   predictions: torch.Tensor,
                                   labels: torch.Tensor) -> torch.Tensor:
@@ -169,8 +167,7 @@ def aggregate_class_scores(scores: torch.Tensor,
 
 def compute_dice_metrics(confusion_matrix: torch.Tensor) -> dict[str, float]:
     """
-    Compute MeanDice over the 19 valid classes and Dice* super-category metrics
-    as unweighted means over the member class Dice scores.
+    Compute MeanDice over the 19 valid classes and Dice* super-category metrics as unweighted means over the member class Dice scores.
     """
     dice_scores, valid_scores = compute_class_dice_scores(confusion_matrix)
 
@@ -219,8 +216,7 @@ def compute_boundary_iou_batch(predictions: torch.Tensor,
     """
     Compute per-class Boundary IoU intersections and unions for a batch.
 
-    Boundary thickness is fixed for the whole batch and set to 0.5% of the
-    image diagonal in pixels.
+    Boundary thickness is fixed for the whole batch and set to 0.5% of the image diagonal in pixels.
 
     Args:
         predictions: Predicted class map of shape (B, H, W).
@@ -271,6 +267,7 @@ def compute_boundary_iou_metrics(intersections: torch.Tensor,
                                  unions: torch.Tensor) -> dict[str, float]:
     """
     Compute MeanBoundaryIoU over the 19 classes, plus safety-critical boundary
+    
     IoU metrics for the classes emphasized by the safety-critical loss.
     """
     # Compute Boundary IoU per class, handling cases where the union is zero to avoid division by zero errors.
@@ -308,7 +305,7 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
         return img, mask
     
     
-# Define classes for the combined CE + Dice loss and the Focal loss, which you can easily switch between.
+# Define classes for the combined CE + Dice loss
 class DiceLoss(nn.Module):
     def __init__(self, ignore_index=255, smooth=1e-6):
         super().__init__()
@@ -340,17 +337,6 @@ class DiceLoss(nn.Module):
         dice_per_class = (2 * intersection + self.smooth) / (cardinality + self.smooth)
 
         return 1 - dice_per_class.mean()
-
-
-class CEDiceLoss(nn.Module):
-    def __init__(self, ignore_index=255, label_smoothing=0.1, dice_weight=0.5):
-        super().__init__()
-        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index, label_smoothing=label_smoothing)
-        self.dice = DiceLoss(ignore_index=ignore_index)
-        self.dice_weight = dice_weight #NOTE: weight of Dice loss, CE weight = 1 - dice_weight
-
-    def forward(self, logits, targets):
-        return (1 - self.dice_weight) * self.ce(logits, targets) + self.dice_weight * self.dice(logits, targets)
 
 
 class BoundaryLoss(nn.Module):
@@ -551,30 +537,8 @@ class SafetyCriticalRebalancedBoundaryLoss(RebalancedBoundaryLoss):
                          alpha_end=alpha_end,
                          num_epochs=num_epochs)
   
-  
-#NOTE: Not used as of now, but implemented as backup plan in case the boundary aware losses do not work out
-#NOTE: Focal loss is designed to address class imbalance by down-weighting easy examples and focusing training on hard examples.
-class FocalLoss(nn.Module):
-    def __init__(self, ignore_index=255, gamma=2.0):
-        super().__init__()
-        self.ignore_index = ignore_index
-        self.gamma = gamma #NOTE: A common default value for gamma in focal loss is 2.0
-        
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        # Compute standard CE per pixel (unreduced)
-        ce_loss = F.cross_entropy(logits, targets, ignore_index=self.ignore_index, reduction='none')
 
-        # Compute p_t = exp(-CE); probability of correct class
-        pt = torch.exp(-ce_loss)
-
-        # Apply focal modulating factor
-        focal_loss = (1 - pt) ** self.gamma * ce_loss
-
-        # Only average over valid pixels
-        valid_mask = targets != self.ignore_index
-        return focal_loss[valid_mask].mean()
-
-
+# Helper function to compute loss and return individual components for logging and RebalancedBoundaryLoss
 def compute_loss_with_components(criterion, logits: torch.Tensor, targets: torch.Tensor, epoch: int):
     if isinstance(criterion, RebalancedBoundaryLoss):
         return criterion(logits, targets, epoch=epoch, return_components=True)
@@ -598,12 +562,12 @@ def get_args_parser():
 
     parser = ArgumentParser("Training script for DINO-based semantic segmentation")
     parser.add_argument("--data-dir", type=str, default="./data/cityscapes", help="Path to the training data")
-    parser.add_argument("--batch-size", type=int, default=64, help="Training batch size")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=8, help="Training batch size")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--num-workers", type=int, default=10, help="Number of workers for data loaders")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
+    parser.add_argument("--experiment-id", type=str, default="DINOv2-training", help="Experiment ID for Weights & Biases")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of gradient accumulation steps")
     parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"], help="Mixed precision mode")
     parser.add_argument("--decoder", type=str, default="linear", choices=["linear", "upsample", "mlp", "EoMT"], help="Type of decoder to use on top of the frozen DINOv2 backbone")
@@ -722,6 +686,7 @@ def main(args):
     )
 
     # Define the model
+    #NOTE: Not used in the submission server of the course, but this was just implemented to run the experiments for the report.
     from model import DinoEoMT, DinoLinearDecoder, DinoMLPDecoder, DinoUpsamplingDecoder
 
     if args.decoder == "linear":
@@ -762,13 +727,6 @@ def main(args):
                                                      alpha_start=0.01,
                                                      alpha_end=0.5,
                                                      num_epochs=args.epochs)
-
-    #UNUSED EXPERIMENTS, BUT COULD BE INTERESTING TO TRY:
-    # Experiment D: CE only
-    # criterion = nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1) # Ignore the void class
-    
-    # Experiment E: Focal loss
-    # criterion = FocalLoss(ignore_index=255, gamma=2.0)
     
     # Define the optimizer (SGD) with momentum and weight decay and a polynomial learning rate scheduler.
     #NOTE: "On the Effect of Image Resolution on Semantic Segmentation" by Singh et al. (2024) use polynomial decay and sgd with momentum https://arxiv.org/pdf/2402.05398 
