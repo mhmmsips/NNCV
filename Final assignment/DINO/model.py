@@ -321,7 +321,7 @@ class DinoMLPDecoder(DinoSegBase):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         H, W = x.shape[-2:]
 
-        # Use only the final patch feature map — same as the upsampling decoder
+        # Use only the final patch feature map; same as the upsampling decoder
         feats = self.extract_patch_features(x)
         logits = self.decoder(feats)
 

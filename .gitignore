@@ -191,3 +191,4 @@ style-reference.md
 
 # Robustness test images
 *.png
+*.pt
