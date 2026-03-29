@@ -2,3 +2,4 @@ checkpoints/DINOv2_EoMT/best_model-epoch=0001-val_loss=1.5420844554901123.pt fil
 checkpoints/DINOv2_linear/final_model-epoch=0049-val_loss=0.3975398540496826.pt filter=lfs diff=lfs merge=lfs -text
 checkpoints/DINOv2_upsample_old/best_model-epoch=0049-val_loss=0.3537556529045105.pt filter=lfs diff=lfs merge=lfs -text
 checkpoints/DINOv2_mlp/best_model-epoch=0049-val_loss=0.43967047333717346.pt filter=lfs diff=lfs merge=lfs -text
+checkpoints/DINOv2_linear/best_model-epoch=0048-val_loss=0.3975398540496826.pt filter=lfs diff=lfs merge=lfs -text
