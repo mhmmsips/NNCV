@@ -72,7 +72,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Load model
-    model = Model()
+    model = Model(decoder="upsample", n_classes=19)  #NOTE: Use upsample as that is deemed to be the best decoder in the PP experiments.
     state_dict = torch.load(
         MODEL_PATH, 
         map_location=device,

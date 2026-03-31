@@ -1,6 +1,6 @@
 """
 This script provides and example implementation of a prediction pipeline 
-for a PyTorch U-Net model. It loads a pre-trained model, processes input 
+for the PyTorch DINOv2 models. It loads a pre-trained model, processes input 
 images, and saves the predicted segmentation masks. 
 
 You can use this file for submissions to the Challenge server. Customize 

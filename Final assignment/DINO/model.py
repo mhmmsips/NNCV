@@ -23,8 +23,30 @@ class DinoSegBase(nn.Module):
         # Store the number of output classes and always load the fixed DINOv2 backbone
         self.n_classes = n_classes
         self.model_name = dino_v2_backbone_name
-        self.backbone = AutoModel.from_pretrained(self.model_name)
-        
+        try:
+            self.backbone = AutoModel.from_pretrained(self.model_name)
+        except Exception as e:
+            from transformers import Dinov2Config
+            # To fix the error on the submission server in which I could not load in the HF version
+            # Found config on: https://huggingface.co/facebook/dinov2-large/blob/main/config.json 
+            # #NOTE: Not included a seperate config.json file as I did not know if that would work on the submission server, so just hardcoded the config values here as a fallback
+            config = Dinov2Config(hidden_size=1024,
+                                  num_hidden_layers=24,
+                                  num_attention_heads=16,
+                                  patch_size=14,
+                                  num_channels=3,
+                                  attention_probs_dropout_prob=0.0,
+                                  drop_path_rate=0.0,
+                                  hidden_act="gelu",
+                                  hidden_dropout_prob=0.0,
+                                  layer_norm_eps=1e-06,
+                                  layerscale_value=1.0,
+                                  mlp_ratio=4,
+                                  qkv_bias=True,
+                                  use_swiglu_ffn=False,
+                                  image_size=518) #NOTE: to fix positional embedding error
+            self.backbone = AutoModel.from_config(config)
+
         # Extract the backbone metadata that is needed by the decoders
         self.hidden_size = self.backbone.config.hidden_size
         self.patch_size = self.backbone.config.patch_size

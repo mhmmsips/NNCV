@@ -305,8 +305,7 @@ weather_augmentations = A.OneOf([A.RandomRain(rain_type="heavy",
                                               p=1.0),
                                  
                                  A.RandomSnow(snow_point_range=(0.2, 0.4),
-                                              brightness_coeff=2.
-                                              5,
+                                              brightness_coeff=2.5,
                                               p=1.0),
                                  
                                  A.RandomSunFlare(flare_roi=(0.0, 0.0, 1.0, 0.5), #NOTE: sun is always in the upper half of the image
@@ -832,7 +831,7 @@ def main(args):
     )
 
     # Define the model
-    model = Model(decoder=args.decoder, n_classes=19)
+    model = Model(decoder=args.decoder, n_classes=19) # NOTE: Use upsample as that was deemed to worked best on the submission server, but works with all decoders
 
     model = model.to(device)
     
