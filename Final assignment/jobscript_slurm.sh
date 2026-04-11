@@ -7,4 +7,4 @@
 #SBATCH --time=04:00:00
 
 
-srun apptainer exec --nv --env-file .env container_with_accelerate.sif /bin/bash main.sh
+srun apptainer exec --nv --env-file .env container_with_accelerate2.sif /bin/bash main.sh

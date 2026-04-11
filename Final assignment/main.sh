@@ -17,4 +17,6 @@ CUDA_LAUNCH_BLOCKING=1 python3 -m accelerate.commands.launch \
     --gradient-accumulation-steps 1 \
     --mixed-precision "fp16" \
     --experiment-id "ADAMW_UNet_CED"
-    # --decoder "upsample"
+    # --decoder "upsample" \
+    # --augmentation "fda" \
+    # --synthia_dir "./data/synthia" \
