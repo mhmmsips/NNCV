@@ -92,7 +92,7 @@ class DinoSegBase(nn.Module):
         if total_layers in paper_indices and n_feature_maps == 4:
             return paper_indices[total_layers]
 
-        # Fallback for other model sizes: evenly spaced quarters (as used in the DINOv3 paper)
+        # Fallback for other model sizes: evenly spaced quarters (as used in the DINOv3 and DINOv2 paper)
         step = total_layers / n_feature_maps
         return [round(i * step) for i in range(1, n_feature_maps + 1)]
 
@@ -335,7 +335,6 @@ class DinoMLPDecoder(DinoSegBase):
 
     def _build_decoder(self) -> nn.Module:
         # hidden_channels=512 gives a moderate bottleneck for DINOv2-L (hidden_size=1024)
-        # This yields approx 1.6M parameters, which is between the linear head and upsampling decoder
         return MLPHead(in_channels=self.hidden_size,
                        hidden_channels=512,
                        n_output_channels=self.n_classes)

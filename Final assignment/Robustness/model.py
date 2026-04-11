@@ -93,7 +93,7 @@ class DinoSegBase(nn.Module):
         if total_layers in paper_indices and n_feature_maps == 4:
             return paper_indices[total_layers]
 
-        # Fallback for other model sizes: evenly spaced quarters (as used in the DINOv3 paper)
+        # Fallback for other model sizes: evenly spaced quarters (as used in the DINOv3 and DINOv2 paper)
         step = total_layers / n_feature_maps
         return [round(i * step) for i in range(1, n_feature_maps + 1)]
 

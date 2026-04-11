@@ -1,5 +1,5 @@
 """
-This script implements a training loop for the model. It is designed to be flexible, 
+This script implements a training loop for the U-Net model. It is designed to be flexible, 
 allowing you to easily modify hyperparameters using a command-line argument parser.
 
 ### Key Features:
@@ -307,6 +307,7 @@ class AugmentedCityscapes(torch.utils.data.Dataset):
     
     
 # Define classes for the combined CE + Dice loss
+#NOTE: It is widely argued within the medical imaging community that Dice and CE are complementary losses, which has motivated the use of this loss
 class DiceLoss(nn.Module):
     def __init__(self, ignore_index=255, smooth=1e-6):
         super().__init__()
@@ -753,9 +754,8 @@ def main(args):
     
     
     # Define the optimizer (SGD) with momentum and weight decay and a polynomial learning rate scheduler.
-    #NOTE: "On the Effect of Image Resolution on Semantic Segmentation" by Singh et al. (2024) use polynomial decay and sgd with momentum https://arxiv.org/pdf/2402.05398 
-    #NOTE: Same for "A Study of RobustNet, a Domain Generalization Method for Semantic Segmentation" by Bou (2022)
-    #NOTE: They do not note weight decay, but uses it to improve generalization and combat overfitting.
+    # L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, and H. Adam, “Encoder-decoder with atrous separable convolution for semantic image segmentation,” 2018. [Online]. Available: https://arxiv.org/abs/1802.02611
+    # M. Li, E. Yumer, and D. Ramanan, “Budgeted training: Rethinking deep neural network training under resource constraints,” 2020. [Online]. Available: https://arxiv.org/abs/1905.04753
     optimizer = optim.SGD(model.parameters(),
                           lr=args.lr,
                           momentum=0.9,

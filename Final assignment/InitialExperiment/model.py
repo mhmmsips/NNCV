@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-
+# Course-provided code for the model.
 class Model(nn.Module):
     """ 
     A simple U-Net architecture for image segmentation.

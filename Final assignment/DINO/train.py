@@ -1,5 +1,5 @@
 """
-This script implements a training loop for the model. It is designed to be flexible, 
+This script implements a training loop for the DINOv2-models. It is designed to be flexible, 
 allowing you to easily modify hyperparameters using a command-line argument parser.
 
 ### Key Features:
@@ -704,7 +704,7 @@ def main(args):
     
     # For the plain DINOv2 models, freeze the entire backbone and train only the decoder head.
     # EoMT is used here as a frozen pretrained baseline, so none of its parameters are updated.
-    if args.decoder == "EoMT":
+    if args.decoder == "EoMT": #NOTE: This uses the pretrained EoMT for cityscapes, but this highly likely has data leakage.
         for param in model.parameters():
             param.requires_grad = False
     else:
@@ -729,13 +729,13 @@ def main(args):
                                                      num_epochs=args.epochs)
     
     # Define the optimizer (SGD) with momentum and weight decay and a polynomial learning rate scheduler.
-    #NOTE: "On the Effect of Image Resolution on Semantic Segmentation" by Singh et al. (2024) use polynomial decay and sgd with momentum https://arxiv.org/pdf/2402.05398 
-    #NOTE: Same for "A Study of RobustNet, a Domain Generalization Method for Semantic Segmentation" by Bou (2022)
-    #NOTE: They do not note weight decay, but uses it to improve generalization and combat overfitting.
+    # L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, and H. Adam, “Encoder-decoder with atrous separable convolution for semantic image segmentation,” 2018. [Online]. Available: https://arxiv.org/abs/1802.02611
+    # M. Li, E. Yumer, and D. Ramanan, “Budgeted training: Rethinking deep neural network training under resource constraints,” 2020. [Online]. Available: https://arxiv.org/abs/1905.04753
     optimizer = optim.SGD(model.parameters(),
                           lr=args.lr,
                           momentum=0.9,
                           weight_decay=1e-3)
+    
     
     scheduler = optim.lr_scheduler.PolynomialLR(optimizer,
                                                total_iters=args.epochs * len(train_dataloader) // args.gradient_accumulation_steps,

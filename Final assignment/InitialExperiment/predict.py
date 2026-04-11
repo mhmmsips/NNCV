@@ -1,6 +1,6 @@
 """
 This script provides and example implementation of a prediction pipeline 
-for a DINOv2-large models. It loads a pre-trained model, processes input 
+for a U-Net models. It loads a pre-trained model, processes input 
 images, and saves the predicted segmentation masks. 
 
 You can use this file for submissions to the Challenge server. Customize 
@@ -66,7 +66,6 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Load model
-    #NOTE: Fill in the decoder here when using something else than the upsample decoder.
     model = Model()
     state_dict = torch.load(
         MODEL_PATH, 
